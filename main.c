@@ -1,13 +1,29 @@
 #include <arpa/inet.h>
 #include <asm-generic/socket.h>
+#include <bits/time.h>
 #include <netinet/in.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
+
+typedef struct {
+  uint8_t version : 2;
+  uint8_t padding : 1;
+  uint8_t extension : 1;
+  uint8_t csrc : 4;
+  uint8_t marker : 1;
+  uint8_t payload_type : 7;
+  uint16_t sequence_number;
+  uint32_t timestamp;
+  uint32_t ssrc;
+} RTP_PACKET;
 
 int main() {
   int server_fd;
@@ -123,6 +139,36 @@ int main() {
         } else if (strcmp(method, "PLAY") == 0) {
           printf("%s\n\n", play_response);
           send(client_fd, play_response, strlen(play_response), 0);
+          uint16_t seq_num = 0;
+
+          uint32_t ssrc = htonl(rand());
+          while (1) {
+            char time[16];
+            struct timespec ts;
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            uint32_t timestamp =
+                (uint32_t)((ts.tv_sec * 90000) +
+                           (ts.tv_nsec / (1000000000 / 90000)));
+
+            uint8_t packet[1500];
+            uint8_t payload[1400];
+
+            RTP_PACKET rtp_packet;
+            rtp_packet.version = 2;
+            rtp_packet.padding = 0;
+            rtp_packet.extension = 0;
+            rtp_packet.csrc = 0;
+            rtp_packet.marker = 0;
+            rtp_packet.payload_type = 7;
+            rtp_packet.sequence_number = htons(seq_num);
+            rtp_packet.timestamp = htonl(timestamp);
+            rtp_packet.ssrc = ssrc;
+
+            memcpy(packet + sizeof(rtp_packet), payload, sizeof(payload));
+
+            send(client_fd, &rtp_packet, sizeof(rtp_packet), 0);
+            seq_num = seq_num + 1;
+          }
         }
       }
     }
