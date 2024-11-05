@@ -1,18 +1,14 @@
-RTSP PUSH.
-The hope for this is to architect a RTSP to HLS security surveillance feed.
-architecture
-_________________________                                                                  _________________________
-|                       |  (RTSP) forward camera h.264 encoded video frames in RTP Packets |                       |
-|Camera                 |----------------------------------------------------------------->| RTSP/HLS Cloud Server | Convert frames to HLS format respond to GET requests with h.264 str
-|_______________________|  Can use ffmpeg for this                                         |_______________________|
-                                                                                                      ^
-                                                                                                      |
-                                                                                                      |
-                                                                                                      | HTTP GET / feed
-                                                                                                      |
-                                                                                                      |
-                                                                                                      |
-                                                                                                 _________
-                                                                                                |        |
-                                                                                                | Client |
-                                                                                                |________|
+# RTSPCP
+
+RTSPCP is meant to be a secure RTSP push to HTTP HLS streaming application.
+
+## Flow
+
+```mermaid
+flowchart LR
+
+A(RTSP/Camera Push Server) -->|ffmpeg stream| B(RTSP/HLS Server)
+B -->|convert stream to HLS| C{HTTP Stream}
+D[Client 1] -->|HTTP GET| C
+E[Client 2] -->|HTTP GET| C
+```
