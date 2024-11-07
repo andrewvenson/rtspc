@@ -12,6 +12,7 @@
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
+#define STREAM_BUFFER_SIZE 8192
 
 typedef struct {
   uint8_t version : 2;
@@ -25,12 +26,21 @@ typedef struct {
   uint32_t ssrc;
 } RTP_PACKET;
 
+void get_date(char *time_buffer, size_t time_buffer_size) {
+  time_t now = time(NULL);
+  struct tm *local = localtime(&now);
+  strftime(time_buffer, time_buffer_size, "Date: %a, %d %b %Y %H:%M:%S %Z",
+           local);
+}
+
 int main() {
   int server_fd;
   int client_fd;
   struct sockaddr_in server_addr;
+  struct sockaddr_in client_push_addr;
   struct sockaddr_in client_addr;
   socklen_t client_addr_size = sizeof(client_addr);
+  socklen_t client_push_size = sizeof(client_push_addr);
   char buffer[BUFFER_SIZE];
   int opt = 1;
 
@@ -83,40 +93,6 @@ int main() {
         char method[10];
         memset(&method, 0, sizeof(method));
 
-        char options_response[] =
-            "RTSP/1.0 200 OK\r\n"
-            "CSeq: 1\r\n"
-            "Public: OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN\r\n"
-            "\r\n";
-
-        char describe_response[] = "RTSP/1.0 200 OK\r\n"
-                                   "CSeq: 2\r\n"
-                                   "Content-Base: rtsp://127.0.0.1:8080/\r\n"
-                                   "Content-Type: application/sdp\r\n"
-                                   "Content-Length: 152\r\n"
-                                   "\r\n"
-                                   "v=0\r\n"
-                                   "o=- 0 0 IN IP4 127.0.0.1\r\n"
-                                   "s=RTSP Session\r\n"
-                                   "c=IN IP4 0.0.0.0\r\n"
-                                   "t=0 0\r\n"
-                                   "a=control:*\r\n"
-                                   "m=video 0 RTP/AVP 96\r\n"
-                                   "a=rtpmap:96 H264/90000\r\n"
-                                   "a=control:trackID=0\r\n";
-
-        char setup_response[] =
-            "RTSP/1.0 200 OK\r\n"
-            "CSeq: 3\r\n"
-            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
-            "Session: 12345678\r\n"
-            "\r\n";
-
-        char play_response[] = "RTSP/1.0 200 OK\r\n"
-                               "CSeq: 4\r\n"
-                               "Session: 12345678\r\n"
-                               "\r\n";
-
         for (int x = 0; x < buffer_size; x++) {
           if (buffer[x] == ' ') {
             method[x] = '\0';
@@ -125,49 +101,95 @@ int main() {
           method[x] = buffer[x];
         }
 
-        printf("%s\n\n", buffer);
-
         if (strcmp(method, "OPTIONS") == 0) {
+          printf("%s\n\n", buffer);
+          char options_response[] = "RTSP/1.0 200 OK\r\n"
+                                    "CSeq: 1\r\n"
+                                    "Public: OPTIONS, DESCRIBE, SETUP, PLAY, "
+                                    "PAUSE, TEARDOWN, ANNOUNCE\r\n"
+                                    "\r\n";
+
           printf("%s\n\n", options_response);
           send(client_fd, options_response, strlen(options_response), 0);
         } else if (strcmp(method, "DESCRIBE") == 0) {
+          printf("%s\n\n", buffer);
+          char describe_response[] = "RTSP/1.0 200 OK\r\n"
+                                     "CSeq: 2\r\n"
+                                     "Content-Base: rtsp://127.0.0.1:8080/\r\n"
+                                     "Content-Type: application/sdp\r\n"
+                                     "Content-Length: 152\r\n"
+                                     "\r\n"
+                                     "v=0\r\n"
+                                     "o=- 0 0 IN IP4 127.0.0.1\r\n"
+                                     "s=RTSP Session\r\n"
+                                     "c=IN IP4 0.0.0.0\r\n"
+                                     "t=0 0\r\n"
+                                     "a=control:*\r\n"
+                                     "m=video 0 RTP/AVP 96\r\n"
+                                     "a=rtpmap:96 H264/90000\r\n"
+                                     "a=control:trackID=0\r\n";
           printf("%s\n\n", describe_response);
           send(client_fd, describe_response, strlen(describe_response), 0);
         } else if (strcmp(method, "SETUP") == 0) {
+          printf("%s\n\n", buffer);
+          char setup_response[] =
+              "RTSP/1.0 200 OK\r\n"
+              "CSeq: 3\r\n"
+              "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
+              "Session: 12345678\r\n"
+              "\r\n";
+
           printf("%s\n\n", setup_response);
           send(client_fd, setup_response, strlen(setup_response), 0);
+        } else if (strcmp(method, "ANNOUNCE") == 0) {
+          printf("%s\n\n", buffer);
+          char announce_response[] = "RTSP/1.0 200 OK\r\n"
+                                     "CSeq: 2\r\n"
+                                     "Session: 12345678\r\n"
+                                     "\r\n";
+
+          printf("%s\n\n", announce_response);
+          send(client_fd, announce_response, strlen(announce_response), 0);
+        } else if (strcmp(method, "RECORD") == 0) {
+          printf("%s\n\n", buffer);
+          char time_buffer[200];
+          char response_date[87];
+          char record_response[512];
+
+          memset(record_response, 0, sizeof(record_response));
+          memset(response_date, 0, sizeof(response_date));
+          memset(record_response, 0, sizeof(record_response));
+
+          strcat(record_response, "RTSP/1.0 200 OK\r\n");
+          strcat(record_response, "CSeq: 4\r\n");
+          strcat(record_response, "Session: 12345678\r\n");
+          get_date(time_buffer, sizeof(time_buffer));
+          strcat(record_response, time_buffer);
+          strcat(record_response, "\r\n\r\n");
+          printf("%s\n\n", record_response);
+          printf("record response %s\n", record_response);
+
+          send(client_fd, record_response, strlen(record_response), 0);
         } else if (strcmp(method, "PLAY") == 0) {
+          printf("%s\n\n", buffer);
+          char play_response[] = "RTSP/1.0 200 OK\r\n"
+                                 "CSeq: 4\r\n"
+                                 "Session: 12345678\r\n"
+                                 "\r\n";
           printf("%s\n\n", play_response);
           send(client_fd, play_response, strlen(play_response), 0);
-          uint16_t seq_num = 0;
 
-          uint32_t ssrc = htonl(rand());
+          char record_buffer[STREAM_BUFFER_SIZE];
+          // streaming to other clients now
           while (1) {
-            char time[16];
-            struct timespec ts;
-            clock_gettime(CLOCK_MONOTONIC, &ts);
-            uint32_t timestamp =
-                (uint32_t)((ts.tv_sec * 90000) +
-                           (ts.tv_nsec / (1000000000 / 90000)));
-
-            uint8_t packet[1500];
-            uint8_t payload[1400];
-
-            RTP_PACKET rtp_packet;
-            rtp_packet.version = 2;
-            rtp_packet.padding = 0;
-            rtp_packet.extension = 0;
-            rtp_packet.csrc = 0;
-            rtp_packet.marker = 0;
-            rtp_packet.payload_type = 7;
-            rtp_packet.sequence_number = htons(seq_num);
-            rtp_packet.timestamp = htonl(timestamp);
-            rtp_packet.ssrc = ssrc;
-
-            memcpy(packet + sizeof(rtp_packet), payload, sizeof(payload));
-
-            send(client_fd, &rtp_packet, sizeof(rtp_packet), 0);
-            seq_num = seq_num + 1;
+            memset(&record_buffer, 0, sizeof(record_buffer));
+            int buffer_size = 0;
+            if ((buffer_size = recv(client_fd, record_buffer,
+                                    STREAM_BUFFER_SIZE - 1, 0)) > 0) {
+              buffer[buffer_size] = '\0';
+              printf("streaming: %s\n", record_buffer);
+              send(client_fd, record_buffer, sizeof(record_buffer), 0);
+            }
           }
         }
       }
