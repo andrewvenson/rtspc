@@ -28,6 +28,114 @@ void get_date(char *time_buffer, size_t time_buffer_size) {
            local);
 }
 
+void record(char *buffer, int client_fd) {
+  printf("%s\n\n", buffer);
+  char time_buffer[200];
+  char response_date[87];
+  char record_response[512];
+  memset(record_response, 0, sizeof(record_response));
+  memset(response_date, 0, sizeof(response_date));
+  memset(record_response, 0, sizeof(record_response));
+  strcat(record_response, "RTSP/1.0 200 OK\r\n");
+  strcat(record_response, "CSeq: 4\r\n");
+  strcat(record_response, "Session: 12345678\r\n");
+  get_date(time_buffer, sizeof(time_buffer));
+  strcat(record_response, time_buffer);
+  strcat(record_response, "\r\n\r\n");
+  printf("%s\n\n", record_response);
+  printf("record response %s\n", record_response);
+  send(client_fd, record_response, strlen(record_response), 0);
+}
+
+void play(char *buffer, int client_fd) {
+  printf("%s\n\n", buffer);
+  char play_response[] = "RTSP/1.0 200 OK\r\n"
+                         "CSeq: 4\r\n"
+                         "Session: 12345678\r\n"
+                         "\r\n";
+  printf("%s\n\n", play_response);
+  send(client_fd, play_response, strlen(play_response), 0);
+}
+
+void announce(char *buffer, int client_fd) {
+  printf("%s\n\n", buffer);
+  char announce_response[] = "RTSP/1.0 200 OK\r\n"
+                             "CSeq: 2\r\n"
+                             "Session: 12345678\r\n"
+                             "\r\n";
+  printf("%s\n\n", announce_response);
+  send(client_fd, announce_response, strlen(announce_response), 0);
+}
+
+void setup(char *buffer, int client_fd) {
+  printf("%s\n\n", buffer);
+  char setup_response[300];
+  memset(setup_response, 0, sizeof(setup_response));
+  strcat(setup_response, "RTSP/1.0 200 OK\r\n");
+  if (client_fd == 5) {
+    strcat(setup_response, "CSeq: 4\r\n");
+  } else {
+    strcat(setup_response, "CSeq: 3\r\n");
+  }
+  strcat(setup_response, "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
+  strcat(setup_response, "Session: 12345678\r\n\r\n");
+  printf("%s\n\n", setup_response);
+  send(client_fd, setup_response, strlen(setup_response), 0);
+}
+
+void describe(char *buffer, int client_fd) {
+  printf("%s\n\n", buffer);
+  char describe_response[500];
+  memset(describe_response, 0, sizeof(describe_response));
+  strcat(describe_response, "RTSP/1.0 200 OK\r\n");
+  if (client_fd == 5) {
+    strcat(describe_response, "CSeq: 3\r\n");
+  } else {
+    strcat(describe_response, "CSeq: 2\r\n");
+  }
+  strcat(describe_response, "Content-Base: rtsp://127.0.0.1:8080/\r\n");
+  strcat(describe_response, "Content-Type: application/sdp\r\n");
+  strcat(describe_response, "Content-Length: 152\r\n");
+  strcat(describe_response, "\r\n");
+  strcat(describe_response, "v=0\r\n");
+  strcat(describe_response, "o=- 0 0 IN IP4 127.0.0.1\r\n");
+  strcat(describe_response, "s=RTSP Session\r\n");
+  strcat(describe_response, "c=IN IP4 0.0.0.0\r\n");
+  strcat(describe_response, "t=0 0\r\n");
+  strcat(describe_response, "a=control:*\r\n");
+  strcat(describe_response, "m=video 0 RTP/AVP 96\r\n");
+  strcat(describe_response, "a=rtpmap:96 H264/90000\r\n");
+  strcat(describe_response, "a=control:trackID=0\r\n");
+  printf("Sending DESCRIBE: %s\n\n", describe_response);
+  send(client_fd, describe_response, strlen(describe_response), 0);
+}
+
+void options(char *buffer, int client_fd) {
+  printf("%s\n\n", buffer);
+  char options_response[90];
+  memset(options_response, 0, sizeof(options_response));
+  strcat(options_response, "RTSP/1.0 200 OK\r\n");
+  if (client_fd == 5) {
+    strcat(options_response, "CSeq: 2\r\n");
+  } else {
+    strcat(options_response, "CSeq: 1\r\n");
+  }
+  strcat(options_response, "Public: OPTIONS, DESCRIBE, SETUP, PLAY, "
+                           "PAUSE, TEARDOWN, ANNOUNCE\r\n\r\n");
+  printf("%s\n\n", options_response);
+  send(client_fd, options_response, strlen(options_response), 0);
+}
+
+void get_method(char *buffer, int buffer_size, char *method) {
+  for (int x = 0; x < buffer_size; x++) {
+    if (buffer[x] == ' ') {
+      method[x] = '\0';
+      break;
+    }
+    method[x] = buffer[x];
+  }
+}
+
 void *handle_requests(void *arg) {
   int buffer_size = 0;
   Handle_Request_Args *args = (Handle_Request_Args *)arg;
@@ -37,120 +145,23 @@ void *handle_requests(void *arg) {
   while (1) {
     if ((buffer_size = recv(client_fd, buffer, BUFFER_SIZE - 1, 0)) > 0) {
       buffer[buffer_size] = '\0';
-
       char method[10];
       memset(&method, 0, sizeof(method));
 
-      for (int x = 0; x < buffer_size; x++) {
-        if (buffer[x] == ' ') {
-          method[x] = '\0';
-          break;
-        }
-        method[x] = buffer[x];
-      }
+      get_method(buffer, buffer_size, method);
 
       if (strcmp(method, "OPTIONS") == 0) {
-        printf("%s\n\n", buffer);
-
-        char options_response[90];
-        memset(options_response, 0, sizeof(options_response));
-
-        strcat(options_response, "RTSP/1.0 200 OK\r\n");
-        if (client_fd == 5) {
-          strcat(options_response, "CSeq: 2\r\n");
-        } else {
-          strcat(options_response, "CSeq: 1\r\n");
-        }
-        strcat(options_response, "Public: OPTIONS, DESCRIBE, SETUP, PLAY, "
-                                 "PAUSE, TEARDOWN, ANNOUNCE\r\n\r\n");
-
-        printf("%s\n\n", options_response);
-        send(client_fd, options_response, strlen(options_response), 0);
+        options(buffer, client_fd);
       } else if (strcmp(method, "DESCRIBE") == 0) {
-        printf("%s\n\n", buffer);
-
-        char describe_response[500];
-        memset(describe_response, 0, sizeof(describe_response));
-
-        strcat(describe_response, "RTSP/1.0 200 OK\r\n");
-        if (client_fd == 5) {
-          strcat(describe_response, "CSeq: 3\r\n");
-        } else {
-          strcat(describe_response, "CSeq: 2\r\n");
-        }
-        strcat(describe_response, "Content-Base: rtsp://127.0.0.1:8080/\r\n");
-        strcat(describe_response, "Content-Type: application/sdp\r\n");
-        strcat(describe_response, "Content-Length: 152\r\n");
-        strcat(describe_response, "\r\n");
-        strcat(describe_response, "v=0\r\n");
-        strcat(describe_response, "o=- 0 0 IN IP4 127.0.0.1\r\n");
-        strcat(describe_response, "s=RTSP Session\r\n");
-        strcat(describe_response, "c=IN IP4 0.0.0.0\r\n");
-        strcat(describe_response, "t=0 0\r\n");
-        strcat(describe_response, "a=control:*\r\n");
-        strcat(describe_response, "m=video 0 RTP/AVP 96\r\n");
-        strcat(describe_response, "a=rtpmap:96 H264/90000\r\n");
-        strcat(describe_response, "a=control:trackID=0\r\n");
-
-        printf("Sending DESCRIBE: %s\n\n", describe_response);
-        send(client_fd, describe_response, strlen(describe_response), 0);
+        describe(buffer, client_fd);
       } else if (strcmp(method, "SETUP") == 0) {
-        printf("%s\n\n", buffer);
-
-        char setup_response[300];
-        memset(setup_response, 0, sizeof(setup_response));
-
-        strcat(setup_response, "RTSP/1.0 200 OK\r\n");
-        if (client_fd == 5) {
-          strcat(setup_response, "CSeq: 4\r\n");
-        } else {
-          strcat(setup_response, "CSeq: 3\r\n");
-        }
-        strcat(setup_response,
-               "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
-        strcat(setup_response, "Session: 12345678\r\n\r\n");
-
-        printf("%s\n\n", setup_response);
-        send(client_fd, setup_response, strlen(setup_response), 0);
+        setup(buffer, client_fd);
       } else if (strcmp(method, "ANNOUNCE") == 0) {
-        printf("%s\n\n", buffer);
-
-        char announce_response[] = "RTSP/1.0 200 OK\r\n"
-                                   "CSeq: 2\r\n"
-                                   "Session: 12345678\r\n"
-                                   "\r\n";
-
-        printf("%s\n\n", announce_response);
-        send(client_fd, announce_response, strlen(announce_response), 0);
+        announce(buffer, client_fd);
       } else if (strcmp(method, "RECORD") == 0) {
-        printf("%s\n\n", buffer);
-
-        char time_buffer[200];
-        char response_date[87];
-        char record_response[512];
-
-        memset(record_response, 0, sizeof(record_response));
-        memset(response_date, 0, sizeof(response_date));
-        memset(record_response, 0, sizeof(record_response));
-
-        strcat(record_response, "RTSP/1.0 200 OK\r\n");
-        strcat(record_response, "CSeq: 4\r\n");
-        strcat(record_response, "Session: 12345678\r\n");
-        get_date(time_buffer, sizeof(time_buffer));
-        strcat(record_response, time_buffer);
-        strcat(record_response, "\r\n\r\n");
-        printf("%s\n\n", record_response);
-        printf("record response %s\n", record_response);
-
-        send(client_fd, record_response, strlen(record_response), 0);
+        record(buffer, client_fd);
       } else if (strcmp(method, "PLAY") == 0) {
-        printf("%s\n\n", buffer);
-        char play_response[] = "RTSP/1.0 200 OK\r\n"
-                               "CSeq: 4\r\n"
-                               "Session: 12345678\r\n"
-                               "\r\n";
-        printf("%s\n\n", play_response);
-        send(client_fd, play_response, strlen(play_response), 0);
+        play(buffer, client_fd);
       }
     }
   }
