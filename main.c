@@ -45,6 +45,8 @@ void record(char *buffer, int client_fd) {
   printf("%s\n\n", record_response);
   printf("record response %s\n", record_response);
   send(client_fd, record_response, strlen(record_response), 0);
+
+  // need to receive and print bytes in a loop here
 }
 
 void play(char *buffer, int client_fd) {
