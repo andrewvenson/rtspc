@@ -18,6 +18,8 @@
 
 typedef struct {
   int client_fd;
+  int *send_client_fd;
+  int *play;
   char *buffer;
 } Handle_Request_Args;
 
@@ -28,7 +30,7 @@ void get_date(char *time_buffer, size_t time_buffer_size) {
            local);
 }
 
-void record(char *buffer, int client_fd) {
+void record(char *buffer, int client_fd, int *send_client_fd, int *play) {
   printf("%s\n\n", buffer);
   char time_buffer[200];
   char response_date[87];
@@ -43,18 +45,38 @@ void record(char *buffer, int client_fd) {
   strcat(record_response, time_buffer);
   strcat(record_response, "\r\n\r\n");
   printf("%s\n\n", record_response);
-  printf("record response %s\n", record_response);
   send(client_fd, record_response, strlen(record_response), 0);
 
   // need to receive and print bytes in a loop here
+  int buffer_size = 0;
+
+  while (1) {
+    if (*play != 0) {
+      printf("Send Client connected:%d\n\n", *send_client_fd);
+      if ((buffer_size = recv(client_fd, buffer, BUFFER_SIZE - 1, 0)) > 0) {
+        char send_buffer[66000] = {0};
+        uint16_t payload_length;
+        for (int byte = 0; byte < buffer_size; byte++) {
+          if (buffer[byte] == '$') {
+            payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
+            printf("Payload length: %c\n\n", payload_length);
+            printf("ChannelId: %c\n\n", buffer[byte + 1]);
+            memcpy(send_buffer, &buffer[byte], payload_length + 4);
+            send(*send_client_fd, send_buffer, payload_length + 4, 0);
+          }
+        }
+      }
+    }
+  }
 }
 
-void play(char *buffer, int client_fd) {
+void play(char *buffer, int client_fd, int *play) {
   printf("%s\n\n", buffer);
   char play_response[] = "RTSP/1.0 200 OK\r\n"
                          "CSeq: 4\r\n"
                          "Session: 12345678\r\n"
                          "\r\n";
+  *play = 1;
   printf("%s\n\n", play_response);
   send(client_fd, play_response, strlen(play_response), 0);
 }
@@ -161,9 +183,9 @@ void *handle_requests(void *arg) {
       } else if (strcmp(method, "ANNOUNCE") == 0) {
         announce(buffer, client_fd);
       } else if (strcmp(method, "RECORD") == 0) {
-        record(buffer, client_fd);
+        record(buffer, client_fd, args->send_client_fd, args->play);
       } else if (strcmp(method, "PLAY") == 0) {
-        play(buffer, client_fd);
+        play(buffer, client_fd, args->play);
       }
     }
   }
@@ -173,6 +195,7 @@ void *handle_requests(void *arg) {
 int main() {
   int server_fd;
   int client_fds[max_clients] = {0};
+  int play = 0;
   pthread_t threads[max_clients] = {0};
   pthread_t threads_used[max_clients] = {0};
   struct sockaddr_in server_addr;
@@ -247,6 +270,8 @@ int main() {
         memset(&args, 0, sizeof(args));
 
         args.client_fd = client_fds[client_fd_index];
+        args.send_client_fd = &client_fds[client_fd_index + 1];
+        args.play = &play;
         args.buffer = buffer[client_fd_index];
 
         pthread_create(&threads[client_fd_index], NULL, handle_requests, &args);
