@@ -17,20 +17,7 @@
 #define max_clients 10
 
 typedef struct {
-  uint8_t version : 2;
-  uint8_t padding : 1;
-  uint8_t extension : 1;
-  uint8_t csrc : 4;
-  uint8_t marker : 1;
-  uint8_t payload_type : 7;
-  uint16_t sequence_number;
-  uint32_t timestamp;
-  uint32_t ssrc;
-} RTP_PACKET;
-
-typedef struct {
   int client_fd;
-  char *push_buffer;
   char *buffer;
 } Handle_Request_Args;
 
@@ -46,7 +33,6 @@ void *handle_requests(void *arg) {
   Handle_Request_Args *args = (Handle_Request_Args *)arg;
   int client_fd = args->client_fd;
   char *buffer = args->buffer;
-  char *push_buffer = args->push_buffer;
 
   while (1) {
     if ((buffer_size = recv(client_fd, buffer, BUFFER_SIZE - 1, 0)) > 0) {
@@ -165,12 +151,6 @@ void *handle_requests(void *arg) {
                                "\r\n";
         printf("%s\n\n", play_response);
         send(client_fd, play_response, strlen(play_response), 0);
-
-        // streaming to other clients now
-        while (1) {
-          printf("streaming: %lu\n", sizeof(push_buffer));
-          // send(client_fd, push_buffer, sizeof(push_buffer), 0);
-        }
       }
     }
   }
@@ -255,11 +235,6 @@ int main() {
 
         args.client_fd = client_fds[client_fd_index];
         args.buffer = buffer[client_fd_index];
-        if (client_fd_index == 4) {
-          args.push_buffer = buffer[client_fd_index];
-        } else {
-          args.push_buffer = buffer[0];
-        }
 
         pthread_create(&threads[client_fd_index], NULL, handle_requests, &args);
       } else {
