@@ -50,32 +50,43 @@ void record(char *buffer, int client_fd, int *send_client_fd, int *play) {
   // need to receive and print bytes in a loop here
   int buffer_size = 0;
 
-  int x = 0;
   while (1) {
     if (*play != 0) {
-      if (x == 0) {
-        printf("We playing on file descriptor: %d\n\n", *send_client_fd);
-      }
-      x = 1;
-      char send_buffer[1204];
+      char send_buffer[66000];
       uint16_t payload_length;
+      uint16_t payload_length_consumed;
 
       if ((buffer_size = recv(client_fd, buffer, BUFFER_SIZE - 1, 0)) > 0) {
 
         for (int byte = 0; byte < buffer_size; byte++) {
 
-          if (byte + 1 < buffer_size) {
-            if (buffer[byte] == '$' && buffer[byte + 1] == 0) {
-              if (byte + 3 < buffer_size) {
-                payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
-                if (payload_length < 1200) {
-                  // printf("Index: %d\n\n", byte);
-                  // printf("magic: %c\n\n", buffer[byte]);
-                  // printf("ChannelId: %01x\n\n", buffer[byte + 1]);
-                  // printf("Payload length: %u\nbytes left in buffer: %d\n\n",
-                  //        payload_length, buffer_size - byte);
-                  if (payload_length < (buffer_size - byte) + 4) {
-                    send(*send_client_fd, send_buffer, payload_length + 4, 0);
+          if (buffer[byte] == '$') {
+
+            if (buffer[byte + 1] == 0) {
+
+              payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
+              int buffer_size_left = BUFFER_SIZE - byte;
+
+              printf("Index: %d\n\n", byte);
+              printf("magic: %c\n\n", buffer[byte]);
+              printf("ChannelId: %01x\n\n", buffer[byte + 1]);
+              printf("Payload length: %u\n\n", payload_length);
+
+              memcpy(send_buffer, &buffer[byte], payload_length + 4);
+
+              if (buffer_size_left > payload_length) {
+                send(*send_client_fd, send_buffer, payload_length + 4, 0);
+                memset(send_buffer, 0, sizeof(send_buffer));
+                payload_length = 0;
+              } else {
+                int new_buffer_size = 0;
+
+                while (payload_length != 0) {
+                  if ((new_buffer_size =
+                           recv(client_fd, buffer, BUFFER_SIZE - 1, 0)) > 0) {
+                    for (int byte = 0; byte < new_buffer_size; byte++) {
+                    }
+                    payload_length = 0;
                   }
                 }
               }
@@ -89,22 +100,13 @@ void record(char *buffer, int client_fd, int *send_client_fd, int *play) {
 
 void play(char *buffer, int client_fd, int *play) {
   printf("%s\n\n", buffer);
-
-  char play_response[300];
-  memset(play_response, 0, sizeof(play_response));
-
-  strcat(play_response, "RTSP/1.0 200 OK\r\n");
-  strcat(play_response, "CSeq: 4\r\n");
-  strcat(play_response, "Range: npt=0.000-\r\n");
-  strcat(play_response, "Content-Length: 0\r\n");
-  strcat(play_response,
-         "RTP-Info: "
-         "url=rtsp://192.168.1.13:8080/trackID=0;seq=12345;rtptime=678910\r\n");
-  strcat(play_response, "Session: 12345678\r\n\r\n");
-
-  send(client_fd, play_response, strlen(play_response), 0);
-
+  char play_response[] = "RTSP/1.0 200 OK\r\n"
+                         "CSeq: 4\r\n"
+                         "Session: 12345678\r\n"
+                         "\r\n";
   *play = 1;
+  printf("%s\n\n", play_response);
+  send(client_fd, play_response, strlen(play_response), 0);
 }
 
 void announce(char *buffer, int client_fd) {
@@ -123,7 +125,7 @@ void setup(char *buffer, int client_fd) {
   memset(setup_response, 0, sizeof(setup_response));
   strcat(setup_response, "RTSP/1.0 200 OK\r\n");
   if (client_fd == 5) {
-    strcat(setup_response, "CSeq: 3\r\n");
+    strcat(setup_response, "CSeq: 4\r\n");
   } else {
     strcat(setup_response, "CSeq: 3\r\n");
   }
@@ -139,16 +141,16 @@ void describe(char *buffer, int client_fd) {
   memset(describe_response, 0, sizeof(describe_response));
   strcat(describe_response, "RTSP/1.0 200 OK\r\n");
   if (client_fd == 5) {
-    strcat(describe_response, "CSeq: 2\r\n");
+    strcat(describe_response, "CSeq: 3\r\n");
   } else {
     strcat(describe_response, "CSeq: 2\r\n");
   }
-  strcat(describe_response, "Content-Base: rtsp://192.168.1.13:8080/\r\n");
+  strcat(describe_response, "Content-Base: rtsp://127.0.0.1:8080/\r\n");
   strcat(describe_response, "Content-Type: application/sdp\r\n");
-  strcat(describe_response, "Content-Length: 155\r\n");
+  strcat(describe_response, "Content-Length: 152\r\n");
   strcat(describe_response, "\r\n");
   strcat(describe_response, "v=0\r\n");
-  strcat(describe_response, "o=- 0 0 IN IP4 192.168.1.13\r\n");
+  strcat(describe_response, "o=- 0 0 IN IP4 127.0.0.1\r\n");
   strcat(describe_response, "s=RTSP Session\r\n");
   strcat(describe_response, "c=IN IP4 0.0.0.0\r\n");
   strcat(describe_response, "t=0 0\r\n");
@@ -166,12 +168,12 @@ void options(char *buffer, int client_fd) {
   memset(options_response, 0, sizeof(options_response));
   strcat(options_response, "RTSP/1.0 200 OK\r\n");
   if (client_fd == 5) {
-    strcat(options_response, "CSeq: 1\r\n");
+    strcat(options_response, "CSeq: 2\r\n");
   } else {
     strcat(options_response, "CSeq: 1\r\n");
   }
   strcat(options_response, "Public: OPTIONS, DESCRIBE, SETUP, PLAY, "
-                           "PAUSE, RECORD, TEARDOWN, ANNOUNCE\r\n\r\n");
+                           "PAUSE, TEARDOWN, ANNOUNCE\r\n\r\n");
   printf("%s\n\n", options_response);
   send(client_fd, options_response, strlen(options_response), 0);
 }
@@ -196,11 +198,9 @@ void *handle_requests(void *arg) {
     if ((buffer_size = recv(client_fd, buffer, BUFFER_SIZE - 1, 0)) > 0) {
       buffer[buffer_size] = '\0';
       char method[10];
-      memset(method, 0, sizeof(method));
+      memset(&method, 0, sizeof(method));
 
       get_method(buffer, buffer_size, method);
-      printf("client_fd: %d method: %s buffer: %s\n\n", client_fd, method,
-             buffer);
 
       if (strcmp(method, "OPTIONS") == 0) {
         options(buffer, client_fd);
@@ -217,7 +217,6 @@ void *handle_requests(void *arg) {
       }
     }
   }
-  printf("closing");
   close(client_fd);
 }
 
