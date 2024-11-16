@@ -12,7 +12,7 @@
 #include <unistd.h>
 
 #define PORT 8080
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 2048
 #define STREAM_BUFFER_SIZE 8192
 #define max_clients 10
 
@@ -48,35 +48,35 @@ void record(char *buffer, int client_fd, int *send_client_fd, int *play) {
   send(client_fd, record_response, strlen(record_response), 0);
 
   // need to receive and print bytes in a loop here
-  int buffer_size = 0;
+  int play_message_sent = 0;
 
-  int x = 0;
   while (1) {
     if (*play != 0) {
-      if (x == 0) {
-        printf("We playing on file descriptor: %d\n\n", *send_client_fd);
+      if (play_message_sent == 0) {
+        printf("Playing on file descriptor: %d\n\n", *send_client_fd);
+        play_message_sent = 1;
       }
-      x = 1;
-      char send_buffer[1204];
+
       uint16_t payload_length;
+      int buffer_size = 0;
 
       if ((buffer_size = recv(client_fd, buffer, BUFFER_SIZE - 1, 0)) > 0) {
-
         for (int byte = 0; byte < buffer_size; byte++) {
-
           if (byte + 1 < buffer_size) {
             if (buffer[byte] == '$' && buffer[byte + 1] == 0) {
               if (byte + 3 < buffer_size) {
                 payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
-                if (payload_length < 1200) {
-                  // printf("Index: %d\n\n", byte);
-                  // printf("magic: %c\n\n", buffer[byte]);
-                  // printf("ChannelId: %01x\n\n", buffer[byte + 1]);
-                  // printf("Payload length: %u\nbytes left in buffer: %d\n\n",
-                  //        payload_length, buffer_size - byte);
-                  if (payload_length < (buffer_size - byte) + 4) {
-                    send(*send_client_fd, send_buffer, payload_length + 4, 0);
-                  }
+                if (payload_length < (buffer_size - byte) &&
+                    payload_length <= 1200) {
+                  printf("Sending packet:\n");
+                  printf("Index: %d\n", byte);
+                  printf("magic: %c\n", buffer[byte]);
+                  printf("ChannelId: %01x\n", buffer[byte + 1]);
+                  printf("Payload length: %u\nbytes left in buffer: %d\n\n",
+                         payload_length, buffer_size - byte);
+                  send(*send_client_fd, &buffer[byte], payload_length + 4, 0);
+                } else {
+                  continue;
                 }
               }
             }
@@ -217,6 +217,7 @@ void *handle_requests(void *arg) {
       }
     }
   }
+
   printf("closing");
   close(client_fd);
 }
