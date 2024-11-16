@@ -51,7 +51,7 @@ void stream(int *play, int client_fd, int *send_client_fd, char *buffer) {
               if (byte + 3 < buffer_size) {
                 payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
                 if (payload_length < (buffer_size - byte) &&
-                    payload_length <= 1200) {
+                    payload_length <= 1400) {
                   printf("Sending packet:\n");
                   printf("Index: %d\n", byte);
                   printf("magic: %c\n", buffer[byte]);
@@ -59,6 +59,7 @@ void stream(int *play, int client_fd, int *send_client_fd, char *buffer) {
                   printf("Payload length: %u\nbytes left in buffer: %d\n\n",
                          payload_length, buffer_size - byte);
                   send(*send_client_fd, &buffer[byte], payload_length + 4, 0);
+                  // usleep(100000 / 15);
                 } else {
                   continue;
                 }
