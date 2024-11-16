@@ -101,10 +101,9 @@ void play(char *buffer, int client_fd, int *play) {
   strcat(play_response, "CSeq: 5\r\n");
   strcat(play_response, "Range: npt=0.000-\r\n");
   strcat(play_response, "Content-Length: 0\r\n");
-  strcat(play_response,
-         "RTP-Info: "
-         "url=rtsp://192.168.1.13:8080/trackID=0;seq=12345;rtptime=678910\r\n");
   strcat(play_response, "Session: 12345678\r\n\r\n");
+
+  printf("%s\n\n", play_response);
 
   send(client_fd, play_response, strlen(play_response), 0);
 
@@ -205,8 +204,6 @@ void *handle_requests(void *arg) {
       memset(method, 0, sizeof(method));
 
       get_method(buffer, buffer_size, method);
-      printf("client_fd: %d method: %s buffer: %s\n\n", client_fd, method,
-             buffer);
 
       if (strcmp(method, "OPTIONS") == 0) {
         options(buffer, client_fd);
