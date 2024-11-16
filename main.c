@@ -43,24 +43,32 @@ void stream(int *play, int client_fd, int *send_client_fd, char *buffer) {
 
       uint16_t payload_length;
       int buffer_size = 0;
+      // char stream_buffer
 
-      if ((buffer_size = recv(client_fd, buffer, BUFFER_SIZE - 1, 0)) > 0) {
+      if ((buffer_size = recv(client_fd, buffer, 66000, 0)) > 0) {
+        printf("received buffer\n");
         for (int byte = 0; byte < buffer_size; byte++) {
           if (byte + 1 < buffer_size) {
             if (buffer[byte] == '$' && buffer[byte + 1] == 0) {
               if (byte + 3 < buffer_size) {
                 payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
-                if (payload_length < (buffer_size - byte) &&
-                    payload_length <= 1400) {
-                  printf("Sending packet:\n");
+                if (payload_length < (buffer_size - byte)) {
+                  printf("Sending packet current buffer:\n");
                   printf("Index: %d\n", byte);
                   printf("magic: %c\n", buffer[byte]);
                   printf("ChannelId: %01x\n", buffer[byte + 1]);
                   printf("Payload length: %u\nbytes left in buffer: %d\n\n",
                          payload_length, buffer_size - byte);
-                  send(*send_client_fd, &buffer[byte], payload_length + 4, 0);
-                  // usleep(100000 / 15);
+                  // send(*send_client_fd, &buffer[byte], payload_length + 4,
+                  // 0);
+                  //  usleep(100000 / 15);
                 } else {
+                  printf("Sending packet left overs:\n");
+                  printf("Index: %d\n", byte);
+                  printf("magic: %c\n", buffer[byte]);
+                  printf("ChannelId: %01x\n", buffer[byte + 1]);
+                  printf("Payload length: %u\nbytes left in buffer: %d\n\n",
+                         payload_length, buffer_size - byte);
                   continue;
                 }
               }
@@ -238,6 +246,8 @@ int main() {
   socklen_t client_push_size = sizeof(client_push_addr);
   char buffer[max_clients][BUFFER_SIZE];
   int opt = 1;
+
+  setbuf(stdout, NULL); // disable buffering to allow printing to file
 
   server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd < 0) {
