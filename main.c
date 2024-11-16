@@ -98,7 +98,7 @@ void play(char *buffer, int client_fd, int *play) {
   memset(play_response, 0, sizeof(play_response));
 
   strcat(play_response, "RTSP/1.0 200 OK\r\n");
-  strcat(play_response, "CSeq: 4\r\n");
+  strcat(play_response, "CSeq: 5\r\n");
   strcat(play_response, "Range: npt=0.000-\r\n");
   strcat(play_response, "Content-Length: 0\r\n");
   strcat(play_response,
@@ -108,7 +108,9 @@ void play(char *buffer, int client_fd, int *play) {
 
   send(client_fd, play_response, strlen(play_response), 0);
 
-  *play = 1;
+  if (client_fd == 5) {
+    *play = 1;
+  }
 }
 
 void announce(char *buffer, int client_fd) {
@@ -126,8 +128,8 @@ void setup(char *buffer, int client_fd) {
   char setup_response[300];
   memset(setup_response, 0, sizeof(setup_response));
   strcat(setup_response, "RTSP/1.0 200 OK\r\n");
-  if (client_fd == 5) {
-    strcat(setup_response, "CSeq: 3\r\n");
+  if (client_fd == 5 || client_fd == 6 || client_fd == 7 || client_fd == 8) {
+    strcat(setup_response, "CSeq: 4\r\n");
   } else {
     strcat(setup_response, "CSeq: 3\r\n");
   }
@@ -142,8 +144,8 @@ void describe(char *buffer, int client_fd) {
   char describe_response[500];
   memset(describe_response, 0, sizeof(describe_response));
   strcat(describe_response, "RTSP/1.0 200 OK\r\n");
-  if (client_fd == 5) {
-    strcat(describe_response, "CSeq: 2\r\n");
+  if (client_fd == 5 || client_fd == 6 || client_fd == 7 || client_fd == 8) {
+    strcat(describe_response, "CSeq: 3\r\n");
   } else {
     strcat(describe_response, "CSeq: 2\r\n");
   }
@@ -169,8 +171,8 @@ void options(char *buffer, int client_fd) {
   char options_response[90];
   memset(options_response, 0, sizeof(options_response));
   strcat(options_response, "RTSP/1.0 200 OK\r\n");
-  if (client_fd == 5) {
-    strcat(options_response, "CSeq: 1\r\n");
+  if (client_fd == 5 || client_fd == 6 || client_fd == 7 || client_fd == 8) {
+    strcat(options_response, "CSeq: 2\r\n");
   } else {
     strcat(options_response, "CSeq: 1\r\n");
   }
