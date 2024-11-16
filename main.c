@@ -30,23 +30,7 @@ void get_date(char *time_buffer, size_t time_buffer_size) {
            local);
 }
 
-void record(char *buffer, int client_fd, int *send_client_fd, int *play) {
-  printf("%s\n\n", buffer);
-  char time_buffer[200];
-  char response_date[87];
-  char record_response[512];
-  memset(record_response, 0, sizeof(record_response));
-  memset(response_date, 0, sizeof(response_date));
-  memset(record_response, 0, sizeof(record_response));
-  strcat(record_response, "RTSP/1.0 200 OK\r\n");
-  strcat(record_response, "CSeq: 4\r\n");
-  strcat(record_response, "Session: 12345678\r\n");
-  get_date(time_buffer, sizeof(time_buffer));
-  strcat(record_response, time_buffer);
-  strcat(record_response, "\r\n\r\n");
-  printf("%s\n\n", record_response);
-  send(client_fd, record_response, strlen(record_response), 0);
-
+void stream(int *play, int client_fd, int *send_client_fd, char *buffer) {
   // need to receive and print bytes in a loop here
   int play_message_sent = 0;
 
@@ -85,6 +69,25 @@ void record(char *buffer, int client_fd, int *send_client_fd, int *play) {
       }
     }
   }
+}
+
+void record(char *buffer, int client_fd, int *send_client_fd, int *play) {
+  printf("%s\n\n", buffer);
+  char time_buffer[200];
+  char response_date[87];
+  char record_response[512];
+  memset(record_response, 0, sizeof(record_response));
+  memset(response_date, 0, sizeof(response_date));
+  memset(record_response, 0, sizeof(record_response));
+  strcat(record_response, "RTSP/1.0 200 OK\r\n");
+  strcat(record_response, "CSeq: 4\r\n");
+  strcat(record_response, "Session: 12345678\r\n");
+  get_date(time_buffer, sizeof(time_buffer));
+  strcat(record_response, time_buffer);
+  strcat(record_response, "\r\n\r\n");
+  printf("%s\n\n", record_response);
+  send(client_fd, record_response, strlen(record_response), 0);
+  stream(play, client_fd, send_client_fd, buffer);
 }
 
 void play(char *buffer, int client_fd, int *play) {
