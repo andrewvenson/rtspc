@@ -38,37 +38,62 @@ void decode_rtp_packet(int size, char *buffer) {
   printf("\n\n");
 }
 
-void decode_rtsp_header(int client_fd, int send_client_fd) {
+void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
+                        int *last_index, int *pl_left_length) {
   uint16_t payload_length;
   char buffer[66000];
   int buffer_size = 0;
+  memset(buffer, 0, sizeof(buffer));
+
   if ((buffer_size = recv(client_fd, buffer, 66000, 0)) >
       0) { // I'm reading up to 66000 bytes at a time
     printf("received buffer\n");
     for (int byte = 0; byte < buffer_size; byte++) {
+      // get left overs
+      if (*last_index != 0) {
+        for (int x = 0; x < abs(*pl_left_length - *last_index); x++) {
+          if (buffer[byte + x] == '$') {
+            break;
+          }
+          b_left[(*last_index) + x] = buffer[byte + x];
+        }
+
+        // decode_rtp_packet(*last_index, &b_left[byte + 4]);
+        send(send_client_fd, b_left, *pl_left_length + 4, 0);
+
+        *pl_left_length = 0;
+        *last_index = 0;
+        memset(b_left, 0, sizeof(*b_left));
+      }
+
       if ((byte + 1) < buffer_size) { // is my index less than 66000
         if (buffer[byte] == '$' && buffer[byte + 1] == 0) { // make sure
           if (byte + 3 < buffer_size) {
             payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
             if (payload_length < (buffer_size - byte)) {
-              printf("Sending packet current buffer:\n");
-              printf("Index: %d\n", byte);
-              printf("magic: %c\n", buffer[byte]);
-              printf("ChannelId: %01x\n", buffer[byte + 1]);
-              printf("Payload length: %u\nbytes left in buffer: %d\n\n",
-                     payload_length, buffer_size - byte);
+              // printf("Sending packet current buffer:\n");
+              // printf("Index: %d\n", byte);
+              // printf("magic: %c\n", buffer[byte]);
+              // printf("ChannelId: %01x\n", buffer[byte + 1]);
+              // printf("Payload length: %u\nbytes left in buffer: %d\n\n",
+              //        payload_length, buffer_size - byte);
               // decode_rtp_packet(buffer_size - byte, &buffer[byte + 4]);
               send(send_client_fd, &buffer[byte], payload_length + 4, 0);
               //  usleep(100000 / 15);
             } else {
-              printf("Sending packet left overs:\n");
-              printf("Index: %d\n", byte);
-              printf("buffer_size: %d\n", buffer_size);
-              printf("magic: %c\n", buffer[byte]);
-              printf("ChannelId: %01x\n", buffer[byte + 1]);
-              printf("Payload length: %u\nbytes left in buffer: %d\n\n",
-                     payload_length, buffer_size - byte);
-              decode_rtp_packet(buffer_size - byte, &buffer[byte + 4]);
+              *pl_left_length = payload_length;
+              for (int x = 0; x < buffer_size - byte; x++) {
+                b_left[x] = buffer[byte + x];
+                *last_index = x;
+              }
+              // printf("Sending packet left overs:\n");
+              // printf("Index: %d\n", byte);
+              // printf("buffer_size: %d\n", buffer_size);
+              // printf("magic: %c\n", buffer[byte]);
+              // printf("ChannelId: %01x\n", buffer[byte + 1]);
+              // printf("Payload length: %u\nbytes left in buffer: %d\n\n",
+              //        payload_length, buffer_size - byte);
+              // decode_rtp_packet(buffer_size - byte, &buffer[byte + 4]);
               continue;
             }
           }
@@ -89,7 +114,11 @@ void stream(int *play, int client_fd, int *send_client_fd) {
         printf("Playing on file descriptor: %d\n\n", *send_client_fd);
         play_message_sent = 1;
       }
-      decode_rtsp_header(client_fd, *send_client_fd);
+      char b_left[66000];
+      int last_index = 0;
+      int pl_left_length = 0;
+      decode_rtsp_header(client_fd, *send_client_fd, b_left, &last_index,
+                         &pl_left_length);
     }
   }
 }
