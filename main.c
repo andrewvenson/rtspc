@@ -86,7 +86,6 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
 
               memset(current_buffer, 0, sizeof(current_buffer));
               continue;
-              //  usleep(100000 / 15);
             } else {
               *pl_left_length = payload_length;
               for (int x = 0; x < buffer_size - byte; x++) {
@@ -104,7 +103,6 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
 }
 
 void stream(int *play, int client_fd, int *send_client_fd) {
-  // need to receive and print bytes in a loop here
   int play_message_sent = 0;
 
   while (1) {
