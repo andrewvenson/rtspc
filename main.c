@@ -15,12 +15,14 @@
 #define BUFFER_SIZE 2048
 #define STREAM_BUFFER_SIZE 8192
 #define max_clients 10
+#define BIG_BUFFER 66000
 
 typedef struct {
   int client_fd;
   int *send_client_fd;
   int *play;
   char *buffer;
+  int *recording;
 } Handle_Request_Args;
 
 void get_date(char *time_buffer, size_t time_buffer_size) {
@@ -41,11 +43,14 @@ void decode_rtp_packet(int size, char *buffer) {
 void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
                         int *last_index, int *pl_left_length) {
   uint16_t payload_length;
-  char buffer[66000];
+  char buffer[BIG_BUFFER];
+  char current_buffer[BIG_BUFFER];
   int buffer_size = 0;
-  memset(buffer, 0, sizeof(buffer));
 
-  if ((buffer_size = recv(client_fd, buffer, 66000, 0)) >
+  memset(buffer, 0, sizeof(buffer));
+  memset(current_buffer, 0, sizeof(buffer));
+
+  if ((buffer_size = recv(client_fd, buffer, BIG_BUFFER, 0)) >
       0) { // I'm reading up to 66000 bytes at a time
     printf("received buffer\n");
     for (int byte = 0; byte < buffer_size; byte++) {
@@ -53,6 +58,7 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
       if (*last_index != 0) {
         for (int x = 0; x < abs(*pl_left_length - *last_index); x++) {
           if (buffer[byte + x] == '$') {
+            b_left[(*last_index) + x] = buffer[byte + x];
             break;
           }
           b_left[(*last_index) + x] = buffer[byte + x];
@@ -63,7 +69,7 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
 
         *pl_left_length = 0;
         *last_index = 0;
-        memset(b_left, 0, sizeof(*b_left));
+        memset(b_left, 0, BIG_BUFFER);
       }
 
       if ((byte + 1) < buffer_size) { // is my index less than 66000
@@ -78,7 +84,14 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
               // printf("Payload length: %u\nbytes left in buffer: %d\n\n",
               //        payload_length, buffer_size - byte);
               // decode_rtp_packet(buffer_size - byte, &buffer[byte + 4]);
-              send(send_client_fd, &buffer[byte], payload_length + 4, 0);
+
+              for (int x = 0; x < payload_length; x++) {
+                current_buffer[x] = buffer[byte + x];
+              }
+
+              send(send_client_fd, current_buffer, payload_length + 4, 0);
+              memset(current_buffer, 0, sizeof(current_buffer));
+              continue;
               //  usleep(100000 / 15);
             } else {
               *pl_left_length = payload_length;
@@ -123,7 +136,8 @@ void stream(int *play, int client_fd, int *send_client_fd) {
   }
 }
 
-void record(char *buffer, int client_fd, int *send_client_fd, int *play) {
+void record(char *buffer, int client_fd, int *send_client_fd, int *play,
+            int *recording) {
   printf("%s\n\n", buffer);
   char time_buffer[200];
   char response_date[87];
@@ -139,6 +153,7 @@ void record(char *buffer, int client_fd, int *send_client_fd, int *play) {
   strcat(record_response, "\r\n\r\n");
   printf("%s\n\n", record_response);
   send(client_fd, record_response, strlen(record_response), 0);
+  *recording = 1;
   stream(play, client_fd, send_client_fd);
 }
 
@@ -149,7 +164,7 @@ void play(char *buffer, int client_fd, int *play) {
   memset(play_response, 0, sizeof(play_response));
 
   strcat(play_response, "RTSP/1.0 200 OK\r\n");
-  strcat(play_response, "CSeq: 5\r\n");
+  strcat(play_response, "CSeq: 4\r\n");
   strcat(play_response, "Range: npt=0.000-\r\n");
   strcat(play_response, "Content-Length: 0\r\n");
   strcat(play_response, "Session: 12345678\r\n\r\n");
@@ -179,7 +194,7 @@ void setup(char *buffer, int client_fd) {
   memset(setup_response, 0, sizeof(setup_response));
   strcat(setup_response, "RTSP/1.0 200 OK\r\n");
   if (client_fd == 5 || client_fd == 6 || client_fd == 7 || client_fd == 8) {
-    strcat(setup_response, "CSeq: 4\r\n");
+    strcat(setup_response, "CSeq: 3\r\n");
   } else {
     strcat(setup_response, "CSeq: 3\r\n");
   }
@@ -189,29 +204,36 @@ void setup(char *buffer, int client_fd) {
   send(client_fd, setup_response, strlen(setup_response), 0);
 }
 
-void describe(char *buffer, int client_fd) {
+void describe(char *buffer, int client_fd, int *recording) {
   printf("%s\n\n", buffer);
   char describe_response[500];
   memset(describe_response, 0, sizeof(describe_response));
   strcat(describe_response, "RTSP/1.0 200 OK\r\n");
   if (client_fd == 5 || client_fd == 6 || client_fd == 7 || client_fd == 8) {
-    strcat(describe_response, "CSeq: 3\r\n");
+    strcat(describe_response, "CSeq: 2\r\n");
   } else {
     strcat(describe_response, "CSeq: 2\r\n");
   }
-  strcat(describe_response, "Content-Base: rtsp://192.168.1.13:8080/\r\n");
+  strcat(describe_response, "Content-Base: rtsp://192.168.1.29:8080/\r\n");
   strcat(describe_response, "Content-Type: application/sdp\r\n");
-  strcat(describe_response, "Content-Length: 155\r\n");
+  strcat(describe_response, "Content-Length: 280\r\n");
   strcat(describe_response, "\r\n");
-  strcat(describe_response, "v=0\r\n");
-  strcat(describe_response, "o=- 0 0 IN IP4 192.168.1.13\r\n");
-  strcat(describe_response, "s=RTSP Session\r\n");
-  strcat(describe_response, "c=IN IP4 0.0.0.0\r\n");
-  strcat(describe_response, "t=0 0\r\n");
-  strcat(describe_response, "a=control:*\r\n");
-  strcat(describe_response, "m=video 0 RTP/AVP 96\r\n");
-  strcat(describe_response, "a=rtpmap:96 H264/90000\r\n");
-  strcat(describe_response, "a=control:trackID=0\r\n");
+
+  if (*recording == 1) {
+    strcat(describe_response, "v=0\r\n");
+    strcat(describe_response, "o=- 0 0 IN IP4 192.168.1.29\r\n");
+    strcat(describe_response, "s=RTSP Session\r\n");
+    strcat(describe_response, "c=IN IP4 0.0.0.0\r\n");
+    strcat(describe_response, "t=0 0\r\n");
+    strcat(describe_response, "a=control:*\r\n");
+    strcat(describe_response, "m=video 0 RTP/AVP 96\r\n");
+    strcat(describe_response, "a=rtpmap:96 H264/90000\r\n");
+    strcat(describe_response, "a=control:trackID=0\r\n");
+    strcat(describe_response,
+           "a=fmtp:96 packetization-mode=1; sprop-parameter-sets=");
+    strcat(describe_response, "Z3oAH7zZQFAFuhAAAAMAEAAAAwKA8YMZYA==,aOvjyyLA; "
+                              "profile-level-id=7A001F\r\n");
+  }
   printf("Sending DESCRIBE: %s\n\n", describe_response);
   send(client_fd, describe_response, strlen(describe_response), 0);
 }
@@ -222,7 +244,7 @@ void options(char *buffer, int client_fd) {
   memset(options_response, 0, sizeof(options_response));
   strcat(options_response, "RTSP/1.0 200 OK\r\n");
   if (client_fd == 5 || client_fd == 6 || client_fd == 7 || client_fd == 8) {
-    strcat(options_response, "CSeq: 2\r\n");
+    strcat(options_response, "CSeq: 1\r\n");
   } else {
     strcat(options_response, "CSeq: 1\r\n");
   }
@@ -259,13 +281,14 @@ void *handle_requests(void *arg) {
       if (strcmp(method, "OPTIONS") == 0) {
         options(buffer, client_fd);
       } else if (strcmp(method, "DESCRIBE") == 0) {
-        describe(buffer, client_fd);
+        describe(buffer, client_fd, args->recording);
       } else if (strcmp(method, "SETUP") == 0) {
         setup(buffer, client_fd);
       } else if (strcmp(method, "ANNOUNCE") == 0) {
         announce(buffer, client_fd);
       } else if (strcmp(method, "RECORD") == 0) {
-        record(buffer, client_fd, args->send_client_fd, args->play);
+        record(buffer, client_fd, args->send_client_fd, args->play,
+               args->recording);
       } else if (strcmp(method, "PLAY") == 0) {
         play(buffer, client_fd, args->play);
       }
@@ -279,6 +302,7 @@ void *handle_requests(void *arg) {
 int main() {
   int server_fd;
   int client_fds[max_clients] = {0};
+  int recording = 0;
   int play = 0;
   pthread_t threads[max_clients] = {0};
   pthread_t threads_used[max_clients] = {0};
@@ -359,6 +383,7 @@ int main() {
         args.send_client_fd = &client_fds[client_fd_index + 1];
         args.play = &play;
         args.buffer = buffer[client_fd_index];
+        args.recording = &recording;
 
         pthread_create(&threads[client_fd_index], NULL, handle_requests, &args);
       } else {
