@@ -44,9 +44,9 @@ void decode_rtp_packet(int size, char *buffer) {
 
 void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
                         int *last_index, int *pl_left_length) {
-  uint16_t payload_length;
   char buffer[BIG_BUFFER];
   char current_buffer[BIG_BUFFER];
+  uint16_t payload_length;
   int buffer_size = 0;
 
   memset(buffer, 0, sizeof(buffer));
@@ -56,7 +56,7 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
     for (int byte = 0; byte < buffer_size; byte++) {
       // get left overs
       if (*last_index != 0) {
-        for (int x = 0; x < abs(*pl_left_length - *last_index); x++) {
+        for (int x = 0; x < abs((*pl_left_length + 4) - *last_index); x++) {
           if (buffer[byte + x] == '$') {
             b_left[(*last_index) + x] = buffer[byte + x];
             break;
@@ -64,6 +64,7 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
           b_left[(*last_index) + x] = buffer[byte + x];
         }
 
+        printf("I should be breaking: lo\n\n");
         send(send_client_fd, b_left, *pl_left_length + 4, 0);
         usleep(FRAME_INTERVAL_US);
 
@@ -76,11 +77,12 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
         if (buffer[byte] == '$' && buffer[byte + 1] == 0) { // make sure
           if (byte + 3 < buffer_size) {
             payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
-            if (payload_length < (buffer_size - byte)) {
-              for (int x = 0; x < payload_length; x++) {
+            if ((payload_length + 4) < (buffer_size - byte)) {
+              for (int x = 0; x < payload_length + 4; x++) {
                 current_buffer[x] = buffer[byte + x];
               }
 
+              printf("I should be breaking: current\n\n");
               send(send_client_fd, current_buffer, payload_length + 4, 0);
               usleep(FRAME_INTERVAL_US);
 
@@ -92,18 +94,22 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
                 b_left[x] = buffer[byte + x];
                 *last_index = x;
               }
-              continue;
+              printf("I should be breaking\n\n");
+              break;
             }
           }
         }
       }
     }
+    memset(buffer, 0, sizeof(buffer));
   }
-  memset(buffer, 0, sizeof(buffer));
 }
 
 void stream(int *play, int client_fd, int *send_client_fd) {
   int play_message_sent = 0;
+  char b_left[BIG_BUFFER];
+  int last_index = 0;
+  int pl_left_length = 0;
 
   while (1) {
     if (*play != 0) {
@@ -111,9 +117,6 @@ void stream(int *play, int client_fd, int *send_client_fd) {
         printf("Playing on file descriptor: %d\n\n", *send_client_fd);
         play_message_sent = 1;
       }
-      char b_left[BIG_BUFFER];
-      int last_index = 0;
-      int pl_left_length = 0;
       decode_rtsp_header(client_fd, *send_client_fd, b_left, &last_index,
                          &pl_left_length);
     }
@@ -221,7 +224,7 @@ void describe(char *buffer, int client_fd, int *recording) {
     strcat(describe_response, "a=control:stream=0\r\n");
     strcat(describe_response,
            "a=fmtp:96 packetization-mode=1; "
-           "sprop-parameter-sets=Z3oAFrzZQKAv+JhAAAADAwAAAwB4g8WLZYA=,aOvjyyLA;"
+           "sprop-parameter-sets=Z3oAFrzZQKAv+JhAAAADAEAAAAeDxYtlgA==,aOvjyyLA;"
            " profile-level-id=7A0016\r\n");
   }
   printf("Sending DESCRIBE: %s\n\n", describe_response);
