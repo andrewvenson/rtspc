@@ -52,8 +52,7 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
   memset(buffer, 0, sizeof(buffer));
   memset(current_buffer, 0, sizeof(buffer));
 
-  if ((buffer_size = recv(client_fd, buffer, BIG_BUFFER, 0)) >
-      0) { // I'm reading up to 66000 bytes at a time
+  if ((buffer_size = recv(client_fd, buffer, BIG_BUFFER, 0)) > 0) {
     for (int byte = 0; byte < buffer_size; byte++) {
       // get left overs
       if (*last_index != 0) {
@@ -65,7 +64,6 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
           b_left[(*last_index) + x] = buffer[byte + x];
         }
 
-        // decode_rtp_packet(*last_index, &b_left[byte + 4]);
         send(send_client_fd, b_left, *pl_left_length + 4, 0);
         usleep(FRAME_INTERVAL_US);
 
@@ -74,7 +72,7 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
         memset(b_left, 0, BIG_BUFFER);
       }
 
-      if ((byte + 1) < buffer_size) { // is my index less than 66000
+      if ((byte + 1) < buffer_size) {
         if (buffer[byte] == '$' && buffer[byte + 1] == 0) { // make sure
           if (byte + 3 < buffer_size) {
             payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
@@ -115,7 +113,7 @@ void stream(int *play, int client_fd, int *send_client_fd) {
         printf("Playing on file descriptor: %d\n\n", *send_client_fd);
         play_message_sent = 1;
       }
-      char b_left[66000];
+      char b_left[BIG_BUFFER];
       int last_index = 0;
       int pl_left_length = 0;
       decode_rtsp_header(client_fd, *send_client_fd, b_left, &last_index,
