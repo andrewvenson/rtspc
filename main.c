@@ -79,14 +79,6 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
           if (byte + 3 < buffer_size) {
             payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
             if (payload_length < (buffer_size - byte)) {
-              // printf("Sending packet current buffer:\n");
-              // printf("Index: %d\n", byte);
-              // printf("magic: %c\n", buffer[byte]);
-              // printf("ChannelId: %01x\n", buffer[byte + 1]);
-              // printf("Payload length: %u\nbytes left in buffer: %d\n\n",
-              //        payload_length, buffer_size - byte);
-              // decode_rtp_packet(buffer_size - byte, &buffer[byte + 4]);
-
               for (int x = 0; x < payload_length; x++) {
                 current_buffer[x] = buffer[byte + x];
               }
@@ -103,14 +95,6 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
                 b_left[x] = buffer[byte + x];
                 *last_index = x;
               }
-              // printf("Sending packet left overs:\n");
-              // printf("Index: %d\n", byte);
-              // printf("buffer_size: %d\n", buffer_size);
-              // printf("magic: %c\n", buffer[byte]);
-              // printf("ChannelId: %01x\n", buffer[byte + 1]);
-              // printf("Payload length: %u\nbytes left in buffer: %d\n\n",
-              //        payload_length, buffer_size - byte);
-              // decode_rtp_packet(buffer_size - byte, &buffer[byte + 4]);
               continue;
             }
           }
