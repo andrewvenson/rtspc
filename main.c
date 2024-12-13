@@ -16,6 +16,8 @@
 #define STREAM_BUFFER_SIZE 8192
 #define max_clients 10
 #define BIG_BUFFER 66000
+#define FPS 30
+#define FRAME_INTERVAL_US (1000000 / FPS)
 
 typedef struct {
   int client_fd;
@@ -52,7 +54,6 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
 
   if ((buffer_size = recv(client_fd, buffer, BIG_BUFFER, 0)) >
       0) { // I'm reading up to 66000 bytes at a time
-    printf("received buffer\n");
     for (int byte = 0; byte < buffer_size; byte++) {
       // get left overs
       if (*last_index != 0) {
@@ -66,6 +67,7 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
 
         // decode_rtp_packet(*last_index, &b_left[byte + 4]);
         send(send_client_fd, b_left, *pl_left_length + 4, 0);
+        usleep(FRAME_INTERVAL_US);
 
         *pl_left_length = 0;
         *last_index = 0;
@@ -90,6 +92,8 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
               }
 
               send(send_client_fd, current_buffer, payload_length + 4, 0);
+              usleep(FRAME_INTERVAL_US);
+
               memset(current_buffer, 0, sizeof(current_buffer));
               continue;
               //  usleep(100000 / 15);
@@ -188,7 +192,7 @@ void announce(char *buffer, int client_fd) {
   send(client_fd, announce_response, strlen(announce_response), 0);
 }
 
-void setup(char *buffer, int client_fd) {
+void setup(char *buffer, int client_fd, int *recording) {
   printf("%s\n\n", buffer);
   char setup_response[300];
   memset(setup_response, 0, sizeof(setup_response));
@@ -198,7 +202,13 @@ void setup(char *buffer, int client_fd) {
   } else {
     strcat(setup_response, "CSeq: 3\r\n");
   }
-  strcat(setup_response, "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
+  if (*recording) {
+    strcat(setup_response,
+           "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
+  } else {
+    strcat(setup_response,
+           "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
+  }
   strcat(setup_response, "Session: 12345678\r\n\r\n");
   printf("%s\n\n", setup_response);
   send(client_fd, setup_response, strlen(setup_response), 0);
@@ -216,7 +226,7 @@ void describe(char *buffer, int client_fd, int *recording) {
   }
   strcat(describe_response, "Content-Base: rtsp://192.168.1.29:8080/\r\n");
   strcat(describe_response, "Content-Type: application/sdp\r\n");
-  strcat(describe_response, "Content-Length: 280\r\n");
+  strcat(describe_response, "Content-Length: 279\r\n");
   strcat(describe_response, "\r\n");
 
   if (*recording == 1) {
@@ -228,11 +238,11 @@ void describe(char *buffer, int client_fd, int *recording) {
     strcat(describe_response, "a=control:*\r\n");
     strcat(describe_response, "m=video 0 RTP/AVP 96\r\n");
     strcat(describe_response, "a=rtpmap:96 H264/90000\r\n");
-    strcat(describe_response, "a=control:trackID=0\r\n");
+    strcat(describe_response, "a=control:stream=0\r\n");
     strcat(describe_response,
-           "a=fmtp:96 packetization-mode=1; sprop-parameter-sets=");
-    strcat(describe_response, "Z3oAH7zZQFAFuhAAAAMAEAAAAwKA8YMZYA==,aOvjyyLA; "
-                              "profile-level-id=7A001F\r\n");
+           "a=fmtp:96 packetization-mode=1; "
+           "sprop-parameter-sets=Z3oAFrzZQKAv+JhAAAADAwAAAwB4g8WLZYA=,aOvjyyLA;"
+           " profile-level-id=7A0016\r\n");
   }
   printf("Sending DESCRIBE: %s\n\n", describe_response);
   send(client_fd, describe_response, strlen(describe_response), 0);
@@ -283,7 +293,7 @@ void *handle_requests(void *arg) {
       } else if (strcmp(method, "DESCRIBE") == 0) {
         describe(buffer, client_fd, args->recording);
       } else if (strcmp(method, "SETUP") == 0) {
-        setup(buffer, client_fd);
+        setup(buffer, client_fd, args->recording);
       } else if (strcmp(method, "ANNOUNCE") == 0) {
         announce(buffer, client_fd);
       } else if (strcmp(method, "RECORD") == 0) {
