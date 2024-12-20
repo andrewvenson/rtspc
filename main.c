@@ -44,21 +44,24 @@ void print_packet(int size, char *buffer) {
 }
 
 void decode_and_relay_rtp(int client_fd, int send_client_fd) {
-  char buffer[4];
+  char buffer[BUFFER_SIZE];
   int buffer_size = 0;
   int byte = 0;
 
   while (1) {
-    if ((buffer_size = recv(client_fd, buffer, 4, 0)) > 0) {
+    if ((buffer_size = recv(client_fd, buffer, BUFFER_SIZE, 0)) > 0) {
       while (byte < buffer_size) {
         if (buffer[byte] == '$' && byte + 3 < buffer_size) {
           uint16_t payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
-          int payload_length_hit = 0;
+          int payload_length_hit =
+              1; // set this to one since we set the $ marker first
 
           printf("payload length: %d\n", payload_length);
           char new_buffer[4];
           int new_buffer_size = 0;
           char current_buffer[BIG_BUFFER];
+
+          current_buffer[byte] = buffer[byte];
 
           while (payload_length_hit < payload_length + 4) {
             if ((new_buffer_size = recv(client_fd, new_buffer, 4, 0)) > 0) {
