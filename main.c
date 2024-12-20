@@ -43,106 +43,51 @@ void print_packet(int size, char *buffer) {
   printf("\n\n");
 }
 
-void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
-                        int *last_index, int *pl_left_length) {
-  char buffer[BIG_BUFFER];
-  char current_buffer[BIG_BUFFER];
-  uint16_t payload_length;
+void decode_and_relay_rtp(int client_fd, int send_client_fd) {
+  char buffer[4];
   int buffer_size = 0;
+  int byte = 0;
 
-  memset(buffer, 0, sizeof(buffer));
-  memset(current_buffer, 0, sizeof(buffer));
+  while (1) {
+    if ((buffer_size = recv(client_fd, buffer, 4, 0)) > 0) {
+      while (byte < buffer_size) {
+        if (buffer[byte] == '$' && byte + 3 < buffer_size) {
+          uint16_t payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
+          int payload_length_hit = 0;
 
-  if ((buffer_size = recv(client_fd, buffer, BIG_BUFFER, 0)) > 0) {
-    for (int byte = 0; byte < buffer_size; byte++) {
-      // get left overs
-      if (*last_index != 0) {
-        for (int x = 0; x < (*pl_left_length + 4) - *last_index; x++) {
-          if (buffer[byte + x] == '$') {
-            break;
-          }
-          b_left[(*last_index) + x] = buffer[byte + x];
-        }
+          printf("payload length: %d\n", payload_length);
+          char new_buffer[4];
+          int new_buffer_size = 0;
+          char current_buffer[BIG_BUFFER];
 
-        if (b_left[1] == 1) {
-          // print_packet((*pl_left_length + 4), b_left);
-        }
-
-        send(send_client_fd, b_left, *pl_left_length + 4, 0);
-        usleep(FRAME_INTERVAL_US);
-
-        *pl_left_length = 0;
-        *last_index = 0;
-        memset(b_left, 0, BIG_BUFFER);
-      }
-
-      if ((byte + 1) < buffer_size) {
-        if (buffer[byte] == '$' &&
-            (buffer[byte + 1] == 0 || buffer[byte + 1] == 1)) { // rtsp and rtcp
-          if (byte + 3 < buffer_size) {
-
-            payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
-
-            if ((payload_length + 4) < (buffer_size - byte) &&
-                (payload_length + 4) < BIG_BUFFER) {
-              for (int x = 0; x < payload_length + 4; x++) {
-                current_buffer[x] = buffer[byte + x];
+          while (payload_length_hit < payload_length + 4) {
+            if ((new_buffer_size = recv(client_fd, new_buffer, 4, 0)) > 0) {
+              for (int x = 0; x < new_buffer_size; x++) {
+                if (new_buffer[x] == '$') {
+                  printf("YOU TRIPPIN FOO\n");
+                }
+                current_buffer[payload_length_hit] = new_buffer[x];
+                payload_length_hit += 1;
               }
-
-              // 0 0 1 0 0 0 0 0
-              if (buffer[byte + 1] == 0) {
-                // printf("RTP PAYLOAD LENGTH: %d\n\n", payload_length);
-              } else if (buffer[byte + 1] == 1) {
-                u_int8_t rtcp_version = (buffer[byte + 4] & 0xC0) >> 6;
-                u_int8_t rtcp_padding = (buffer[byte + 4] & 0x20) >> 5;
-                u_int8_t rtcp_packet_type = buffer[byte + 5];
-                u_int16_t rtcp_packet_length =
-                    (buffer[byte + 6] << 8) | buffer[byte + 7];
-                u_int16_t rtcp_length = (rtcp_packet_length + 1) * 4;
-                printf("RTCP PAYLOAD LENGTH: %d version: %d padding: %d "
-                       "packet_type: %d packet_length: %d length: %d\n\n",
-                       payload_length, rtcp_version, rtcp_padding,
-                       rtcp_packet_type, rtcp_packet_length, rtcp_length);
-              }
-
-              send(send_client_fd, current_buffer, payload_length + 4, 0);
-              usleep(FRAME_INTERVAL_US);
-
-              memset(current_buffer, 0, sizeof(current_buffer));
-              continue;
-            } else if ((payload_length + 4) < BIG_BUFFER) {
-              *pl_left_length = payload_length;
-
-              if (buffer[byte + 1] == 0) {
-                // printf("RTP PAYLOAD LENGTH: %d\n\n", payload_length);
-              } else if (buffer[byte + 1] == 1) {
-                printf(
-                    "RTCP can't print the whole thang PAYLOAD LENGTH: %d\n\n",
-                    payload_length);
-              }
-
-              for (int x = 0; x < buffer_size - byte; x++) {
-                b_left[x] = buffer[byte + x];
-                *last_index = x;
-              }
-              // print_packet(buffer_size - byte, &buffer[byte]);
-              break;
+              memset(new_buffer, 0, sizeof(new_buffer));
             }
           }
+
+          printf("SENDING: %d\n\n", payload_length_hit);
+          send(send_client_fd, current_buffer, payload_length + 4, 0);
+          memset(current_buffer, 0, sizeof(current_buffer));
+          memset(new_buffer, 0, sizeof(new_buffer));
         }
+        byte += 1;
       }
+      byte = 0;
+      memset(buffer, 0, sizeof(buffer));
     }
-    memset(buffer, 0, sizeof(buffer));
   }
 }
 
 void stream(int *play, int client_fd, int *send_client_fd) {
   int play_message_sent = 0;
-  char b_left[BIG_BUFFER];
-  int last_index = 0;
-  int pl_left_length = 0;
-
-  memset(b_left, 0, BIG_BUFFER);
 
   while (1) {
     if (*play != 0) {
@@ -150,8 +95,7 @@ void stream(int *play, int client_fd, int *send_client_fd) {
         printf("Playing on file descriptor: %d\n\n", *send_client_fd);
         play_message_sent = 1;
       }
-      decode_rtsp_header(client_fd, *send_client_fd, b_left, &last_index,
-                         &pl_left_length);
+      decode_and_relay_rtp(client_fd, *send_client_fd);
     }
   }
 }
@@ -242,7 +186,7 @@ void describe(char *buffer, int client_fd, int *recording) {
   }
   strcat(describe_response, "Content-Base: rtsp://192.168.1.29:8080/\r\n");
   strcat(describe_response, "Content-Type: application/sdp\r\n");
-  strcat(describe_response, "Content-Length: 279\r\n");
+  strcat(describe_response, "Content-Length: 281\r\n");
   strcat(describe_response, "\r\n");
 
   if (*recording == 1) {
@@ -254,11 +198,11 @@ void describe(char *buffer, int client_fd, int *recording) {
     strcat(describe_response, "a=control:*\r\n");
     strcat(describe_response, "m=video 0 RTP/AVP 96\r\n");
     strcat(describe_response, "a=rtpmap:96 H264/90000\r\n");
-    strcat(describe_response, "a=control:stream=0\r\n");
     strcat(describe_response,
            "a=fmtp:96 packetization-mode=1; "
            "sprop-parameter-sets=Z3oAFrzZQKAv+JhAAAADAEAAAAeDxYtlgA==,aOvjyyLA;"
            " profile-level-id=7A0016\r\n");
+    strcat(describe_response, "a=control:streamid=0\r\n");
   }
   printf("Sending DESCRIBE: %s\n\n", describe_response);
   send(client_fd, describe_response, strlen(describe_response), 0);
