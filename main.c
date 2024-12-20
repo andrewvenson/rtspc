@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -15,7 +16,7 @@
 #define BUFFER_SIZE 2048
 #define STREAM_BUFFER_SIZE 8192
 #define max_clients 10
-#define BIG_BUFFER 66000
+#define BIG_BUFFER 65700
 #define FPS 30
 #define FRAME_INTERVAL_US (1000000 / FPS)
 
@@ -34,8 +35,8 @@ void get_date(char *time_buffer, size_t time_buffer_size) {
            local);
 }
 
-void decode_rtp_packet(int size, char *buffer) {
-  printf("RTP:\n");
+void print_packet(int size, char *buffer) {
+  printf("\n\n");
   for (int x = 0; x < size; x++) {
     printf("%c", buffer[x]);
   }
@@ -56,15 +57,17 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
     for (int byte = 0; byte < buffer_size; byte++) {
       // get left overs
       if (*last_index != 0) {
-        for (int x = 0; x < abs((*pl_left_length + 4) - *last_index); x++) {
+        for (int x = 0; x < (*pl_left_length + 4) - *last_index; x++) {
           if (buffer[byte + x] == '$') {
-            b_left[(*last_index) + x] = buffer[byte + x];
             break;
           }
           b_left[(*last_index) + x] = buffer[byte + x];
         }
 
-        printf("I should be breaking: lo\n\n");
+        if (b_left[1] == 1) {
+          // print_packet((*pl_left_length + 4), b_left);
+        }
+
         send(send_client_fd, b_left, *pl_left_length + 4, 0);
         usleep(FRAME_INTERVAL_US);
 
@@ -74,27 +77,55 @@ void decode_rtsp_header(int client_fd, int send_client_fd, char *b_left,
       }
 
       if ((byte + 1) < buffer_size) {
-        if (buffer[byte] == '$' && buffer[byte + 1] == 0) { // make sure
+        if (buffer[byte] == '$' &&
+            (buffer[byte + 1] == 0 || buffer[byte + 1] == 1)) { // rtsp and rtcp
           if (byte + 3 < buffer_size) {
+
             payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
-            if ((payload_length + 4) < (buffer_size - byte)) {
+
+            if ((payload_length + 4) < (buffer_size - byte) &&
+                (payload_length + 4) < BIG_BUFFER) {
               for (int x = 0; x < payload_length + 4; x++) {
                 current_buffer[x] = buffer[byte + x];
               }
 
-              printf("I should be breaking: current\n\n");
+              // 0 0 1 0 0 0 0 0
+              if (buffer[byte + 1] == 0) {
+                // printf("RTP PAYLOAD LENGTH: %d\n\n", payload_length);
+              } else if (buffer[byte + 1] == 1) {
+                u_int8_t rtcp_version = (buffer[byte + 4] & 0xC0) >> 6;
+                u_int8_t rtcp_padding = (buffer[byte + 4] & 0x20) >> 5;
+                u_int8_t rtcp_packet_type = buffer[byte + 5];
+                u_int16_t rtcp_packet_length =
+                    (buffer[byte + 6] << 8) | buffer[byte + 7];
+                u_int16_t rtcp_length = (rtcp_packet_length + 1) * 4;
+                printf("RTCP PAYLOAD LENGTH: %d version: %d padding: %d "
+                       "packet_type: %d packet_length: %d length: %d\n\n",
+                       payload_length, rtcp_version, rtcp_padding,
+                       rtcp_packet_type, rtcp_packet_length, rtcp_length);
+              }
+
               send(send_client_fd, current_buffer, payload_length + 4, 0);
               usleep(FRAME_INTERVAL_US);
 
               memset(current_buffer, 0, sizeof(current_buffer));
               continue;
-            } else {
+            } else if ((payload_length + 4) < BIG_BUFFER) {
               *pl_left_length = payload_length;
+
+              if (buffer[byte + 1] == 0) {
+                // printf("RTP PAYLOAD LENGTH: %d\n\n", payload_length);
+              } else if (buffer[byte + 1] == 1) {
+                printf(
+                    "RTCP can't print the whole thang PAYLOAD LENGTH: %d\n\n",
+                    payload_length);
+              }
+
               for (int x = 0; x < buffer_size - byte; x++) {
                 b_left[x] = buffer[byte + x];
                 *last_index = x;
               }
-              printf("I should be breaking\n\n");
+              // print_packet(buffer_size - byte, &buffer[byte]);
               break;
             }
           }
@@ -110,6 +141,8 @@ void stream(int *play, int client_fd, int *send_client_fd) {
   char b_left[BIG_BUFFER];
   int last_index = 0;
   int pl_left_length = 0;
+
+  memset(b_left, 0, BIG_BUFFER);
 
   while (1) {
     if (*play != 0) {
