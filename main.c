@@ -43,51 +43,88 @@ void print_packet(int size, char *buffer) {
   printf("\n\n");
 }
 
-void decode_and_relay_rtp(int client_fd, int send_client_fd) {
-  char buffer[BUFFER_SIZE];
-  int buffer_size = 0;
-  int byte = 0;
+// UDP Implementation
+void decode_and_relay_rtp(int client_fd, int send_client_fd) {}
 
-  while (1) {
-    if ((buffer_size = recv(client_fd, buffer, BUFFER_SIZE, 0)) > 0) {
-      while (byte < buffer_size) {
-        if (buffer[byte] == '$' && byte + 3 < buffer_size) {
-          uint16_t payload_length = (buffer[byte + 2] << 8) | buffer[byte + 3];
-          int payload_length_hit =
-              1; // set this to one since we set the $ marker first
-
-          printf("payload length: %d\n", payload_length);
-          char new_buffer[4];
-          int new_buffer_size = 0;
-          char current_buffer[BIG_BUFFER];
-
-          current_buffer[byte] = buffer[byte];
-
-          while (payload_length_hit < payload_length + 4) {
-            if ((new_buffer_size = recv(client_fd, new_buffer, 4, 0)) > 0) {
-              for (int x = 0; x < new_buffer_size; x++) {
-                if (new_buffer[x] == '$') {
-                  printf("YOU TRIPPIN FOO\n");
-                }
-                current_buffer[payload_length_hit] = new_buffer[x];
-                payload_length_hit += 1;
-              }
-              memset(new_buffer, 0, sizeof(new_buffer));
-            }
-          }
-
-          printf("SENDING: %d\n\n", payload_length_hit);
-          send(send_client_fd, current_buffer, payload_length + 4, 0);
-          memset(current_buffer, 0, sizeof(current_buffer));
-          memset(new_buffer, 0, sizeof(new_buffer));
-        }
-        byte += 1;
-      }
-      byte = 0;
-      memset(buffer, 0, sizeof(buffer));
-    }
-  }
-}
+// TCP implementation
+// void decode_and_relay_tcp_rtp(int client_fd, int send_client_fd) {
+//   char buffer[1];
+//
+//   int buffer_size = 0;
+//   int byte = 0;
+//
+//   int flag_set = 0;
+//   int control_set = 0;
+//   int length_one_set = 0;
+//   char length_one;
+//
+//   char current_buffer[BIG_BUFFER];
+//
+//   uint16_t payload_length = 0;
+//
+//   // I want to read in 1 byte at a time
+//   // if one of the bytes is a $
+//   // then read 2nd, 3rd and 4th byte
+//   // after we have the payload from the 3rd and 4th byte
+//   // loop through all the bytes until we've received full payload
+//   // start at reading the next byte 1 by 1 until we get the full payload
+//
+//   while (1) {
+//     if ((buffer_size = recv(client_fd, buffer, 1, 0)) > 0) {
+//       if (buffer[0] == '$' && flag_set == 0) {
+//         current_buffer[0] = '$';
+//         flag_set = 1;
+//         continue;
+//       }
+//       if (flag_set == 1 && control_set == 0) {
+//         current_buffer[1] = buffer[0];
+//         control_set = 1;
+//         continue;
+//       }
+//       if (flag_set == 1 && control_set == 1 && length_one_set == 0) {
+//         length_one_set = 1;
+//         current_buffer[2] = buffer[0];
+//         length_one = buffer[0];
+//         continue;
+//       }
+//       if (flag_set == 1 && control_set == 1 && length_one_set == 1) {
+//         current_buffer[3] = buffer[0];
+//         payload_length = (length_one << 8) | buffer[0];
+//
+//         int payload_length_hit = 4;
+//         int new_buffer_size = 0;
+//         char new_buffer[4];
+//
+//         while (payload_length_hit < payload_length + 4) {
+//           if ((new_buffer_size = recv(client_fd, new_buffer, 4, 0)) > 0) {
+//             if (payload_length_hit == payload_length + 4) {
+//               break;
+//             }
+//             for (int x = 0; x < new_buffer_size; x++) {
+//               if (payload_length_hit == payload_length + 4) {
+//                 break;
+//               }
+//               current_buffer[payload_length_hit] = new_buffer[x];
+//               payload_length_hit += 1;
+//             }
+//           }
+//         }
+//
+//         printf("SENDING: %d\n\n", payload_length_hit);
+//         send(send_client_fd, current_buffer, payload_length + 4, 0);
+//         memset(current_buffer, 0, sizeof(current_buffer));
+//         memset(new_buffer, 0, sizeof(new_buffer));
+//
+//         payload_length = 0;
+//         flag_set = 0;
+//         control_set = 0;
+//         length_one_set = 0;
+//         length_one = 0;
+//       }
+//       memset(buffer, 0, sizeof(buffer));
+//     }
+//   }
+// }
 
 void stream(int *play, int client_fd, int *send_client_fd) {
   int play_message_sent = 0;
@@ -165,9 +202,16 @@ void setup(char *buffer, int client_fd, int *recording) {
   } else {
     strcat(setup_response, "CSeq: 3\r\n");
   }
+
+  // SETUP rtsp://192.168.1.29:8080/streamid=0 RTSP/1.0
+  // Transport: RTP/AVP/UDP;unicast;client_port=11098-11099;mode=record
+  // CSeq: 3
+  // User-Agent: Lavf61.7.100
+  // Session: 12345678
+
   if (*recording) {
     strcat(setup_response,
-           "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
+           "Transport: RTP/AVP/UDP;unicast;interleaved=0-1\r\n");
   } else {
     strcat(setup_response,
            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
@@ -237,11 +281,78 @@ void get_method(char *buffer, int buffer_size, char *method) {
   }
 }
 
+int get_client_ports(char *buffer, int buffer_size, int *rtp_port,
+                     int *rtcp_port) {
+  char rtp_port_char[12];
+  char rtcp_port_char[12];
+  memset(rtp_port_char, 0, sizeof(rtp_port_char));
+  memset(rtcp_port_char, 0, sizeof(rtcp_port_char));
+
+  int client_port_section_found = 0;
+  int rtp_port_found = 0;
+  int client_end_found = 0;
+  int semi_found = 0;
+
+  printf("GETTING client PORTS: buffersize: %d\n\n", buffer_size);
+
+  for (int x = 0; x < buffer_size; x++) {
+    if (buffer[x] == ';') {
+      semi_found += 1;
+    }
+
+    if (semi_found == 2) {
+      if (buffer[x] == '=') {
+        printf("%s\n", &buffer[x + 1]);
+        int z = 1;
+        int y = 0;
+        int a = 0;
+        while (z) {
+          if (buffer[x + y] == '=') {
+            y += 1;
+            continue;
+          }
+          if (buffer[x + y] == '-') {
+            z = 0;
+            break;
+          }
+          rtp_port_char[a] = buffer[x + y];
+          a += 1;
+          y += 1;
+        }
+        a = 0;
+        z = 1;
+        while (z) {
+          if (buffer[x + y] == '-') {
+            y += 1;
+            continue;
+          }
+          if (buffer[x + y] == ';') {
+            z = 0;
+            break;
+          }
+          rtcp_port_char[a] = buffer[x + y];
+          a += 1;
+          y += 1;
+        }
+        printf("hellooooooooooooooooo rtp_port: %s\n\n\n", rtp_port_char);
+        printf("hellooooooooooooooooo rtcp_port: %s\n\n\n", rtcp_port_char);
+        *rtcp_port = atoi(rtcp_port_char);
+        *rtp_port = atoi(rtp_port_char);
+        semi_found = 0;
+        return 0;
+      }
+    }
+  }
+  return 0;
+}
+
 void *handle_requests(void *arg) {
   int buffer_size = 0;
   Handle_Request_Args *args = (Handle_Request_Args *)arg;
   int client_fd = args->client_fd;
   char *buffer = args->buffer;
+  int rtp_port;
+  int rtcp_port;
 
   while (1) {
     if ((buffer_size = recv(client_fd, buffer, BUFFER_SIZE - 1, 0)) > 0) {
@@ -256,6 +367,8 @@ void *handle_requests(void *arg) {
       } else if (strcmp(method, "DESCRIBE") == 0) {
         describe(buffer, client_fd, args->recording);
       } else if (strcmp(method, "SETUP") == 0) {
+        get_client_ports(buffer, buffer_size, &rtp_port, &rtcp_port);
+        printf("RECORDING RTP PORT: %d RTCP PORT: %d\n\n", rtp_port, rtcp_port);
         setup(buffer, client_fd, args->recording);
       } else if (strcmp(method, "ANNOUNCE") == 0) {
         announce(buffer, client_fd);
