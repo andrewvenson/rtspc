@@ -192,7 +192,8 @@ void announce(char *buffer, int client_fd) {
   send(client_fd, announce_response, strlen(announce_response), 0);
 }
 
-void setup(char *buffer, int client_fd, int *recording) {
+void setup(char *buffer, int client_fd, int *recording, int rtp_port,
+           int rtcp_port, char *rtp_port_char, char *rtcp_port_char) {
   printf("%s\n\n", buffer);
   char setup_response[300];
   memset(setup_response, 0, sizeof(setup_response));
@@ -203,18 +204,15 @@ void setup(char *buffer, int client_fd, int *recording) {
     strcat(setup_response, "CSeq: 3\r\n");
   }
 
-  // SETUP rtsp://192.168.1.29:8080/streamid=0 RTSP/1.0
-  // Transport: RTP/AVP/UDP;unicast;client_port=11098-11099;mode=record
-  // CSeq: 3
-  // User-Agent: Lavf61.7.100
-  // Session: 12345678
-
   if (*recording) {
     strcat(setup_response,
            "Transport: RTP/AVP/UDP;unicast;interleaved=0-1\r\n");
   } else {
-    strcat(setup_response,
-           "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
+    strcat(setup_response, "Transport: RTP/AVP/UDP;unicast;client_port=");
+    strcat(setup_response, rtp_port_char);
+    strcat(setup_response, "-");
+    strcat(setup_response, rtcp_port_char);
+    strcat(setup_response, "\r\n");
   }
   strcat(setup_response, "Session: 12345678\r\n\r\n");
   printf("%s\n\n", setup_response);
@@ -282,11 +280,8 @@ void get_method(char *buffer, int buffer_size, char *method) {
 }
 
 int get_client_ports(char *buffer, int buffer_size, int *rtp_port,
-                     int *rtcp_port) {
-  char rtp_port_char[12];
-  char rtcp_port_char[12];
-  memset(rtp_port_char, 0, sizeof(rtp_port_char));
-  memset(rtcp_port_char, 0, sizeof(rtcp_port_char));
+                     int *rtcp_port, char *rtp_port_char,
+                     char *rtcp_port_char) {
 
   int client_port_section_found = 0;
   int rtp_port_found = 0;
@@ -334,8 +329,6 @@ int get_client_ports(char *buffer, int buffer_size, int *rtp_port,
           a += 1;
           y += 1;
         }
-        printf("hellooooooooooooooooo rtp_port: %s\n\n\n", rtp_port_char);
-        printf("hellooooooooooooooooo rtcp_port: %s\n\n\n", rtcp_port_char);
         *rtcp_port = atoi(rtcp_port_char);
         *rtp_port = atoi(rtp_port_char);
         semi_found = 0;
@@ -353,6 +346,10 @@ void *handle_requests(void *arg) {
   char *buffer = args->buffer;
   int rtp_port;
   int rtcp_port;
+  char rtp_port_char[12];
+  char rtcp_port_char[12];
+  memset(rtp_port_char, 0, 12);
+  memset(rtcp_port_char, 0, 12);
 
   while (1) {
     if ((buffer_size = recv(client_fd, buffer, BUFFER_SIZE - 1, 0)) > 0) {
@@ -367,9 +364,10 @@ void *handle_requests(void *arg) {
       } else if (strcmp(method, "DESCRIBE") == 0) {
         describe(buffer, client_fd, args->recording);
       } else if (strcmp(method, "SETUP") == 0) {
-        get_client_ports(buffer, buffer_size, &rtp_port, &rtcp_port);
-        printf("RECORDING RTP PORT: %d RTCP PORT: %d\n\n", rtp_port, rtcp_port);
-        setup(buffer, client_fd, args->recording);
+        get_client_ports(buffer, buffer_size, &rtp_port, &rtcp_port,
+                         rtp_port_char, rtcp_port_char);
+        setup(buffer, client_fd, args->recording, rtp_port, rtcp_port,
+              rtp_port_char, rtcp_port_char);
       } else if (strcmp(method, "ANNOUNCE") == 0) {
         announce(buffer, client_fd);
       } else if (strcmp(method, "RECORD") == 0) {
