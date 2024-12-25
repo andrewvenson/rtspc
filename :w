@@ -12,9 +12,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define PORT 8081
-#define UDP_PORT 8082
-#define UDP_CONTROL_PORT 8083
+#define PORT 8080
 #define BUFFER_SIZE 2048
 #define STREAM_BUFFER_SIZE 8192
 #define max_clients 10
@@ -28,8 +26,6 @@ typedef struct {
   int *play;
   char *buffer;
   int *recording;
-  int udp_rtp;
-  int udp_control_rtp;
 } Handle_Request_Args;
 
 void get_date(char *time_buffer, size_t time_buffer_size) {
@@ -133,58 +129,30 @@ void print_packet(int size, char *buffer) {
 void decode_and_relay_tcp_rtp(int client_fd, int send_client_fd) {
   char buffer[BIG_BUFFER];
   int buffer_size = 0;
-  printf("%d, %d, %d ", client_fd, send_client_fd, BIG_BUFFER);
   while (1) {
-    if ((buffer_size = recv(client_fd, buffer, BIG_BUFFER, 0)) > 0) {
-      printf("SIZE: %d\n\n", buffer_size);
-      printf("BUFFER: %c, %c, %c, %c,\n\n", buffer[0], buffer[1], buffer[2],
-             buffer[3]);
-      usleep(FRAME_INTERVAL_US);
+    if ((buffer_size = recv(client_fd, buffer, 1, 0)) > 0) {
       send(send_client_fd, buffer, buffer_size, 0);
       memset(buffer, 0, sizeof(buffer));
-    } else {
-      printf("Not getting any data\n");
     }
   }
 }
 
-void stream(int *play, int client_fd, int *send_client_fd, int udp_rtp,
-            int udp_control_rtp) {
-
-  printf("rtp: %d, udp_control_rtp: %d, client_fd: %d\n\n", udp_rtp,
-         udp_control_rtp, client_fd);
+void stream(int *play, int client_fd, int *send_client_fd) {
   int play_message_sent = 0;
-
-  struct sockaddr_in udp_client_addr;
-  socklen_t udp_client_addr_size = sizeof(udp_client_addr);
-
-  char buffer[BUFFER_SIZE];
 
   while (1) {
     if (*play != 0) {
       if (play_message_sent == 0) {
-        printf("Playing on file descriptor: %d with client_fd: %d\n\n",
-               *send_client_fd, client_fd);
+        printf("Playing on file descriptor: %d\n\n", *send_client_fd);
         play_message_sent = 1;
       }
-
-      int bytes =
-          recvfrom(udp_rtp, buffer, BUFFER_SIZE, 0,
-                   (struct sockaddr *)&udp_client_addr, &udp_client_addr_size);
-
-      if (bytes < 0) {
-        perror("failed to get bytes");
-        continue;
-      } else {
-        // sendto(send_client_fd, buffer, buffer_size, 0);
-        printf("hello \n\n\n");
-      }
+      decode_and_relay_tcp_rtp(client_fd, *send_client_fd);
     }
   }
 }
 
 void record(char *buffer, int client_fd, int *send_client_fd, int *play,
-            int *recording, int udp_rtp, int udp_control_rtp) {
+            int *recording) {
   printf("%s\n\n", buffer);
   char time_buffer[200];
   char response_date[87];
@@ -201,9 +169,7 @@ void record(char *buffer, int client_fd, int *send_client_fd, int *play,
   printf("%s\n\n", record_response);
   send(client_fd, record_response, strlen(record_response), 0);
   *recording = 1;
-  printf("this is when I would want to allow for listening on udp port 8082 "
-         "and 8083\n\n");
-  stream(play, client_fd, send_client_fd, udp_rtp, udp_control_rtp);
+  stream(play, client_fd, send_client_fd);
 }
 
 void play(char *buffer, int client_fd, int *play) {
@@ -238,32 +204,8 @@ void announce(char *buffer, int client_fd) {
 }
 
 // udp
-void setup(char *buffer, int client_fd, int *recording, int rtp_port,
-           int rtcp_port, char *rtp_port_char, char *rtcp_port_char) {
-  printf("%s\n\n", buffer);
-  char setup_response[300];
-  memset(setup_response, 0, sizeof(setup_response));
-  strcat(setup_response, "RTSP/1.0 200 OK\r\n");
-  strcat(setup_response, "CSeq: 3\r\n");
-
-  if (*recording) {
-    strcat(setup_response,
-           "Transport: RTP/AVP/UDP;unicast;interleaved=0-1\r\n");
-  } else {
-    strcat(setup_response, "Transport: RTP/AVP/UDP;unicast;client_port=");
-    strcat(setup_response, rtp_port_char);
-    strcat(setup_response, "-");
-    strcat(setup_response, rtcp_port_char);
-    strcat(setup_response, ";server_port=8082-8083");
-    strcat(setup_response, "\r\n");
-  }
-  strcat(setup_response, "Session: 12345678\r\n\r\n");
-  printf("%s\n\n", setup_response);
-  send(client_fd, setup_response, strlen(setup_response), 0);
-}
-
-// static tcp
-// void setup(char *buffer, int client_fd, int *recording) {
+// void setup(char *buffer, int client_fd, int *recording, int rtp_port,
+//            int rtcp_port, char *rtp_port_char, char *rtcp_port_char) {
 //   printf("%s\n\n", buffer);
 //   char setup_response[300];
 //   memset(setup_response, 0, sizeof(setup_response));
@@ -273,17 +215,44 @@ void setup(char *buffer, int client_fd, int *recording, int rtp_port,
 //   } else {
 //     strcat(setup_response, "CSeq: 3\r\n");
 //   }
+//
 //   if (*recording) {
 //     strcat(setup_response,
-//            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
+//            "Transport: RTP/AVP/UDP;unicast;interleaved=0-1\r\n");
 //   } else {
-//     strcat(setup_response,
-//            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
+//     strcat(setup_response, "Transport: RTP/AVP/UDP;unicast;client_port=");
+//     strcat(setup_response, rtp_port_char);
+//     strcat(setup_response, "-");
+//     strcat(setup_response, rtcp_port_char);
+//     strcat(setup_response, "\r\n");
 //   }
 //   strcat(setup_response, "Session: 12345678\r\n\r\n");
 //   printf("%s\n\n", setup_response);
 //   send(client_fd, setup_response, strlen(setup_response), 0);
 // }
+
+// static tcp
+void setup(char *buffer, int client_fd, int *recording) {
+  printf("%s\n\n", buffer);
+  char setup_response[300];
+  memset(setup_response, 0, sizeof(setup_response));
+  strcat(setup_response, "RTSP/1.0 200 OK\r\n");
+  if (client_fd == 5 || client_fd == 6 || client_fd == 7 || client_fd == 8) {
+    strcat(setup_response, "CSeq: 3\r\n");
+  } else {
+    strcat(setup_response, "CSeq: 3\r\n");
+  }
+  if (*recording) {
+    strcat(setup_response,
+           "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
+  } else {
+    strcat(setup_response,
+           "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
+  }
+  strcat(setup_response, "Session: 12345678\r\n\r\n");
+  printf("%s\n\n", setup_response);
+  send(client_fd, setup_response, strlen(setup_response), 0);
+}
 
 void describe(char *buffer, int client_fd, int *recording) {
   printf("%s\n\n", buffer);
@@ -295,7 +264,7 @@ void describe(char *buffer, int client_fd, int *recording) {
   } else {
     strcat(describe_response, "CSeq: 2\r\n");
   }
-  strcat(describe_response, "Content-Base: rtsp://192.168.1.29:8081/\r\n");
+  strcat(describe_response, "Content-Base: rtsp://192.168.1.29:8080/\r\n");
   strcat(describe_response, "Content-Type: application/sdp\r\n");
   strcat(describe_response, "Content-Length: 281\r\n");
   strcat(describe_response, "\r\n");
@@ -346,65 +315,65 @@ void get_method(char *buffer, int buffer_size, char *method) {
 }
 
 // parses setup request to get udp client ports
-int get_udp_client_ports(char *buffer, int buffer_size, int *rtp_port,
-                         int *rtcp_port, char *rtp_port_char,
-                         char *rtcp_port_char) {
-
-  int client_port_section_found = 0;
-  int rtp_port_found = 0;
-  int client_end_found = 0;
-  int semi_found = 0;
-
-  printf("GETTING client PORTS: buffersize: %d\n\n", buffer_size);
-
-  for (int x = 0; x < buffer_size; x++) {
-    if (buffer[x] == ';') {
-      semi_found += 1;
-    }
-
-    if (semi_found == 2) {
-      if (buffer[x] == '=') {
-        printf("%s\n", &buffer[x + 1]);
-        int z = 1;
-        int y = 0;
-        int a = 0;
-        while (z) {
-          if (buffer[x + y] == '=') {
-            y += 1;
-            continue;
-          }
-          if (buffer[x + y] == '-') {
-            z = 0;
-            break;
-          }
-          rtp_port_char[a] = buffer[x + y];
-          a += 1;
-          y += 1;
-        }
-        a = 0;
-        z = 1;
-        while (z) {
-          if (buffer[x + y] == '-') {
-            y += 1;
-            continue;
-          }
-          if (buffer[x + y] == ';') {
-            z = 0;
-            break;
-          }
-          rtcp_port_char[a] = buffer[x + y];
-          a += 1;
-          y += 1;
-        }
-        *rtcp_port = atoi(rtcp_port_char);
-        *rtp_port = atoi(rtp_port_char);
-        semi_found = 0;
-        return 0;
-      }
-    }
-  }
-  return 0;
-}
+// int get_udp_client_ports(char *buffer, int buffer_size, int *rtp_port,
+//                          int *rtcp_port, char *rtp_port_char,
+//                          char *rtcp_port_char) {
+//
+//   int client_port_section_found = 0;
+//   int rtp_port_found = 0;
+//   int client_end_found = 0;
+//   int semi_found = 0;
+//
+//   printf("GETTING client PORTS: buffersize: %d\n\n", buffer_size);
+//
+//   for (int x = 0; x < buffer_size; x++) {
+//     if (buffer[x] == ';') {
+//       semi_found += 1;
+//     }
+//
+//     if (semi_found == 2) {
+//       if (buffer[x] == '=') {
+//         printf("%s\n", &buffer[x + 1]);
+//         int z = 1;
+//         int y = 0;
+//         int a = 0;
+//         while (z) {
+//           if (buffer[x + y] == '=') {
+//             y += 1;
+//             continue;
+//           }
+//           if (buffer[x + y] == '-') {
+//             z = 0;
+//             break;
+//           }
+//           rtp_port_char[a] = buffer[x + y];
+//           a += 1;
+//           y += 1;
+//         }
+//         a = 0;
+//         z = 1;
+//         while (z) {
+//           if (buffer[x + y] == '-') {
+//             y += 1;
+//             continue;
+//           }
+//           if (buffer[x + y] == ';') {
+//             z = 0;
+//             break;
+//           }
+//           rtcp_port_char[a] = buffer[x + y];
+//           a += 1;
+//           y += 1;
+//         }
+//         *rtcp_port = atoi(rtcp_port_char);
+//         *rtp_port = atoi(rtp_port_char);
+//         semi_found = 0;
+//         return 0;
+//       }
+//     }
+//   }
+//   return 0;
+// }
 
 void *handle_requests(void *arg) {
   int buffer_size = 0;
@@ -431,16 +400,14 @@ void *handle_requests(void *arg) {
       } else if (strcmp(method, "DESCRIBE") == 0) {
         describe(buffer, client_fd, args->recording);
       } else if (strcmp(method, "SETUP") == 0) {
-        printf("%s\n\n", buffer);
-        get_udp_client_ports(buffer, buffer_size, &rtp_port, &rtcp_port,
-                             rtp_port_char, rtcp_port_char);
-        setup(buffer, client_fd, args->recording, rtp_port, rtcp_port,
-              rtp_port_char, rtcp_port_char);
+        // get_udp_client_ports(buffer, buffer_size, &rtp_port, &rtcp_port,
+        //                  rtp_port_char, rtcp_port_char);
+        setup(buffer, client_fd, args->recording);
       } else if (strcmp(method, "ANNOUNCE") == 0) {
         announce(buffer, client_fd);
       } else if (strcmp(method, "RECORD") == 0) {
         record(buffer, client_fd, args->send_client_fd, args->play,
-               args->recording, args->udp_rtp, args->udp_control_rtp);
+               args->recording);
       } else if (strcmp(method, "PLAY") == 0) {
         play(buffer, client_fd, args->play);
       }
@@ -452,25 +419,19 @@ void *handle_requests(void *arg) {
 }
 
 int main() {
-  char buffer[max_clients][BUFFER_SIZE];
+  int server_fd;
   int client_fds[max_clients] = {0};
-  pthread_t threads[max_clients] = {0};
-  pthread_t threads_used[max_clients] = {0};
   int recording = 0;
   int play = 0;
-
-  int server_fd;
+  pthread_t threads[max_clients] = {0};
+  pthread_t threads_used[max_clients] = {0};
   struct sockaddr_in server_addr;
+  struct sockaddr_in client_push_addr;
   struct sockaddr_in client_addr;
   socklen_t client_addr_size = sizeof(client_addr);
+  socklen_t client_push_size = sizeof(client_push_addr);
+  char buffer[max_clients][BUFFER_SIZE];
   int opt = 1;
-
-  int udp_server_fd;
-  int udp_control_port_fd;
-  struct sockaddr_in udp_server_addr;
-  struct sockaddr_in udp_control_port_address;
-  int udp_opt = 1;
-  int udp_control_opt = 1;
 
   setbuf(stdout, NULL); // disable buffering to allow printing to file
 
@@ -480,23 +441,9 @@ int main() {
     return -1;
   }
 
-  udp_server_fd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (udp_server_fd < 0) {
-    perror("Error creating socket");
-    return -1;
-  }
-
-  udp_control_port_fd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (udp_control_port_fd < 0) {
-    perror("Error creating socket");
-    return -1;
-  }
-
   if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
     perror("Error setting socket options");
     close(server_fd);
-    close(udp_server_fd);
-    close(udp_control_port_fd);
     return -1;
   }
 
@@ -505,48 +452,16 @@ int main() {
   server_addr.sin_addr.s_addr = INADDR_ANY;
   server_addr.sin_port = htons(PORT);
 
-  memset(&udp_server_addr, 0, sizeof(udp_server_addr));
-  udp_server_addr.sin_family = AF_INET;
-  udp_server_addr.sin_addr.s_addr = INADDR_ANY;
-  udp_server_addr.sin_port = htons(UDP_PORT);
-
-  memset(&udp_control_port_address, 0, sizeof(udp_control_port_address));
-  udp_control_port_address.sin_family = AF_INET;
-  udp_control_port_address.sin_addr.s_addr = INADDR_ANY;
-  udp_control_port_address.sin_port = htons(UDP_CONTROL_PORT);
-
   if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) <
       0) {
     perror("Error binding socket to server address");
     close(server_fd);
-    close(udp_server_fd);
-    close(udp_control_port_fd);
-    return -1;
-  }
-
-  if (bind(udp_server_fd, (struct sockaddr *)&udp_server_addr,
-           sizeof(udp_server_addr)) < 0) {
-    perror("Error binding socket to udp server address");
-    close(server_fd);
-    close(udp_server_fd);
-    close(udp_control_port_fd);
-    return -1;
-  }
-
-  if (bind(udp_control_port_fd, (struct sockaddr *)&udp_control_port_address,
-           sizeof(udp_control_port_address)) < 0) {
-    perror("Error binding socket to control port address");
-    close(server_fd);
-    close(udp_server_fd);
-    close(udp_control_port_fd);
     return -1;
   }
 
   if (listen(server_fd, max_clients) < 0) {
-    perror("Error listening for server connections");
+    perror("Error listening for connections");
     close(server_fd);
-    close(udp_server_fd);
-    close(udp_control_port_fd);
     return -1;
   }
 
@@ -569,7 +484,6 @@ int main() {
 
         threads_used[client_fd_index] = 1;
 
-        // getting rtsp tcp data
         client_fds[client_fd_index] = accept(
             server_fd, (struct sockaddr *)&client_addr, &client_addr_size);
 
@@ -589,8 +503,6 @@ int main() {
         args.play = &play;
         args.buffer = buffer[client_fd_index];
         args.recording = &recording;
-        args.udp_rtp = udp_server_fd;
-        args.udp_control_rtp = udp_control_port_fd;
 
         pthread_create(&threads[client_fd_index], NULL, handle_requests, &args);
       } else {
@@ -601,24 +513,6 @@ int main() {
   }
 
   close(server_fd);
-  close(udp_server_fd);
-  close(udp_control_port_fd);
 
   return 0;
 }
-
-// compare
-/*
-  SETUP rtsp://192.168.1.29:8081/streamid=0 RTSP/1.0
-Transport: RTP/AVP/UDP;unicast;client_port=26836-26837
- CSeq: 3
- User-Agent: Lavf60.16.100
-*/
-
-/*
-SETUP rtsp://192.168.1.29:8081/streamid=0 RTSP/1.0
-Transport: RTP/AVP/UDP;unicast;client_port=31940-31941;mode=record
-CSeq: 3
-User-Agent: Lavf61.7.100
-Session: 12345678
-*/
