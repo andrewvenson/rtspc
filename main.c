@@ -19,6 +19,24 @@
 #define STREAM_BUFFER_SIZE 1500
 #define max_clients 10
 
+// The following command plays live stream
+/*
+  ffplay -loglevel debug -v verbose \
+  -vcodec h264 -rtsp_transport udp -i \
+  rtsp://192.168.1.29:8081
+ */
+
+// The following command converts stream to hls
+/*
+ ffmpeg - re - loglevel debug - rtsp_transport udp -i \
+ rtsp : //192.168.1.29:8081 \
+ -vf fps=30 \
+ -c:v libx264 -preset veryfast -g 30 \
+ -c:a aac -b:a 128k \
+ -f hls -hls_time 4 -hls_segment_filename "segment_%03d.ts" \
+ output.m3u8
+*/
+
 typedef struct {
   int *play;
   char *buffer;
@@ -49,96 +67,19 @@ void print_packet(int size, char *buffer) {
   printf("\n\n");
 }
 
-// TCP implementation
-// void decode_and_relay_tcp_rtp(int client_fd, int send_client_fd) {
-//   char buffer[1];
-//
-//   int buffer_size = 0;
-//   int byte = 0;
-//
-//   int flag_set = 0;
-//   int control_set = 0;
-//   int length_one_set = 0;
-//   char length_one;
-//
-//   char current_buffer[BIG_BUFFER];
-//
-//   uint16_t payload_length = 0;
-//
-//   // I want to read in 1 byte at a time
-//   // if one of the bytes is a $
-//   // then read 2nd, 3rd and 4th byte
-//   // after we have the payload from the 3rd and 4th byte
-//   // loop through all the bytes until we've received full payload
-//   // start at reading the next byte 1 by 1 until we get the full payload
-//
-//   while (1) {
-//     if ((buffer_size = recv(client_fd, buffer, 1, 0)) > 0) {
-//       if (buffer[0] == '$' && flag_set == 0) {
-//         current_buffer[0] = '$';
-//         flag_set = 1;
-//         continue;
-//       }
-//       if (flag_set == 1 && control_set == 0) {
-//         current_buffer[1] = buffer[0];
-//         control_set = 1;
-//         continue;
-//       }
-//       if (flag_set == 1 && control_set == 1 && length_one_set == 0) {
-//         length_one_set = 1;
-//         current_buffer[2] = buffer[0];
-//         length_one = buffer[0];
-//         continue;
-//       }
-//       if (flag_set == 1 && control_set == 1 && length_one_set == 1) {
-//         current_buffer[3] = buffer[0];
-//         payload_length = (length_one << 8) | buffer[0];
-//
-//         int payload_length_hit = 4;
-//         int new_buffer_size = 0;
-//         char new_buffer[4];
-//
-//         while (payload_length_hit < payload_length + 4) {
-//           if ((new_buffer_size = recv(client_fd, new_buffer, 4, 0)) > 0) {
-//             if (payload_length_hit == payload_length + 4) {
-//               break;
-//             }
-//             for (int x = 0; x < new_buffer_size; x++) {
-//               if (payload_length_hit == payload_length + 4) {
-//                 break;
-//               }
-//               current_buffer[payload_length_hit] = new_buffer[x];
-//               payload_length_hit += 1;
-//             }
-//           }
-//         }
-//
-//         printf("SENDING: %d\n\n", payload_length_hit);
-//         send(send_client_fd, current_buffer, payload_length + 4, 0);
-//         memset(current_buffer, 0, sizeof(current_buffer));
-//         memset(new_buffer, 0, sizeof(new_buffer));
-//
-//         payload_length = 0;
-//         flag_set = 0;
-//         control_set = 0;
-//         length_one_set = 0;
-//         length_one = 0;
-//       }
-//       memset(buffer, 0, sizeof(buffer));
-//     }
-//   }
-// }
-
 void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
             int *udp_rtp_client_fd, int *udp_rtcp_client_fd,
             struct sockaddr_in *udp_rtp_client_addr,
-            socklen_t udp_rtp_client_addr_size) {
-
+            socklen_t udp_rtp_client_addr_size,
+            struct sockaddr_in *udp_rtcp_client_addr,
+            socklen_t udp_rtcp_client_address_size) {
   int play_message_sent = 0;
   int bytes = 0;
   struct sockaddr_in udp_rtp_sender_addr;
   socklen_t udp_rtp_sender_addr_size = sizeof(udp_rtp_sender_addr);
   char buffer[STREAM_BUFFER_SIZE];
+
+  int found_first_flag = 0;
 
   while (1) {
     if (*play != 0) {
@@ -148,8 +89,12 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
             "%d, udp_rtcp_client_fd: %d\n\n",
             udp_rtp_server_fd, udp_rtcp_server_fd, *udp_rtp_client_fd,
             *udp_rtcp_client_fd);
-        printf("Address: %s:%d\n\n", inet_ntoa(udp_rtp_client_addr->sin_addr),
+        printf("RTP Address: %s:%d\n\n",
+               inet_ntoa(udp_rtp_client_addr->sin_addr),
                ntohs(udp_rtp_client_addr->sin_port));
+        printf("RTCP Address: %s:%d\n\n",
+               inet_ntoa(udp_rtcp_client_addr->sin_addr),
+               ntohs(udp_rtcp_client_addr->sin_port));
         play_message_sent = 1;
       }
 
@@ -161,7 +106,8 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
         perror("failed to get bytes");
         continue;
       } else {
-        // printf("Sending BUFFER SIZE: %d\n\n\n", bytes);
+
+        printf("Sending BUFFER SIZE: %d\n\n\n", bytes);
         sendto(*udp_rtp_client_fd, buffer, bytes, 0,
                (struct sockaddr *)udp_rtp_client_addr,
                udp_rtp_client_addr_size);
@@ -195,7 +141,8 @@ void record(char *buffer, int client_fd, int *play, int *recording,
   send(client_fd, record_response, strlen(record_response), 0);
   *recording = 1;
   stream(play, udp_rtp_server_fd, udp_rtcp_server_fd, udp_rtp_client_fd,
-         udp_rtcp_client_fd, udp_rtp_client_addr, udp_rtp_client_addr_size);
+         udp_rtcp_client_fd, udp_rtp_client_addr, udp_rtp_client_addr_size,
+         udp_rtcp_client_addr, udp_rtcp_client_addr_size);
 }
 
 void play(char *buffer, int client_fd, int *play) {
@@ -275,30 +222,6 @@ void setup(char *buffer, int client_fd, int *recording, int rtp_port,
   }
   send(client_fd, setup_response, strlen(setup_response), 0);
 }
-
-// static tcp
-// void setup(char *buffer, int client_fd, int *recording) {
-//   printf("%s\n\n", buffer);
-//   char setup_response[300];
-//   memset(setup_response, 0, sizeof(setup_response));
-//   strcat(setup_response, "RTSP/1.0 200 OK\r\n");
-//   if (client_fd == 5 || client_fd == 6 || client_fd == 7 || client_fd == 8)
-//   {
-//     strcat(setup_response, "CSeq: 3\r\n");
-//   } else {
-//     strcat(setup_response, "CSeq: 3\r\n");
-//   }
-//   if (*recording) {
-//     strcat(setup_response,
-//            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
-//   } else {
-//     strcat(setup_response,
-//            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n");
-//   }
-//   strcat(setup_response, "Session: 12345678\r\n\r\n");
-//   printf("%s\n\n", setup_response);
-//   send(client_fd, setup_response, strlen(setup_response), 0);
-// }
 
 void describe(char *buffer, int client_fd, int *recording) {
   printf("%s\n\n", buffer);
