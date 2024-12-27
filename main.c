@@ -19,7 +19,17 @@
 #define STREAM_BUFFER_SIZE 1500
 #define max_clients 10
 
-// The following command plays live stream
+// The following command records the live stream from initial client
+/* (macos)
+ ffmpeg -re -loglevel debug -f \
+ avfoundation -framerate 30 -video_size 640x360 -i \
+ 0 -fflags +genpts \
+ -c:v libx264 \
+ -x264-params "keyint=60:no-scenecut=1" \
+ -f rtsp rtsp://192.168.1.29:8081
+*/
+
+// The following command plays live stream from  client
 /*
   ffplay -loglevel debug -v verbose \
   -vcodec h264 -rtsp_transport udp -i \
@@ -52,6 +62,13 @@ typedef struct {
   socklen_t udp_rtcp_client_addr_size;
 } Handle_Request_Args;
 
+struct stream_data {
+  int udp_server_fd;
+  int udp_client_fd;
+  struct sockaddr_in udp_client_addr;
+  socklen_t udp_client_addr_size;
+};
+
 void get_date(char *time_buffer, size_t time_buffer_size) {
   time_t now = time(NULL);
   struct tm *local = localtime(&now);
@@ -67,52 +84,75 @@ void print_packet(int size, char *buffer) {
   printf("\n\n");
 }
 
+void *stream_protocol(void *data) {
+  struct stream_data *sd = (struct stream_data *)data;
+  int udp_server_fd = sd->udp_server_fd;
+  int udp_client_fd = sd->udp_client_fd;
+  struct sockaddr_in udp_client_addr = sd->udp_client_addr;
+  socklen_t udp_client_addr_size = sd->udp_client_addr_size;
+
+  int play_message_sent = 0;
+  int bytes = 0;
+  struct sockaddr_in udp_sender_addr;
+  socklen_t udp_sender_addr_size = sizeof(udp_sender_addr);
+  char buffer[STREAM_BUFFER_SIZE];
+
+  while (1) {
+    if (play_message_sent == 0) {
+      printf("udp_server_fd: %d, udp_client_fd: %d\n\n", udp_server_fd,
+             udp_client_fd);
+      printf("FD Address: %s:%d\n\n", inet_ntoa(udp_client_addr.sin_addr),
+             ntohs(udp_client_addr.sin_port));
+      play_message_sent = 1;
+    }
+
+    printf("Sending on PORT: %d\n\n", ntohs(udp_client_addr.sin_port));
+
+    bytes =
+        recvfrom(udp_server_fd, buffer, STREAM_BUFFER_SIZE, 0,
+                 (struct sockaddr *)&udp_sender_addr, &udp_sender_addr_size);
+
+    if (bytes < 0) {
+      perror("failed to get bytes");
+      continue;
+    } else {
+      // printf("Sending BUFFER SIZE: %d\n\n\n", bytes);
+      sendto(udp_client_fd, buffer, bytes, 0,
+             (struct sockaddr *)&udp_client_addr, udp_client_addr_size);
+      memset(buffer, 0, sizeof(buffer));
+    }
+  }
+}
+
 void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
             int *udp_rtp_client_fd, int *udp_rtcp_client_fd,
             struct sockaddr_in *udp_rtp_client_addr,
             socklen_t udp_rtp_client_addr_size,
             struct sockaddr_in *udp_rtcp_client_addr,
-            socklen_t udp_rtcp_client_address_size) {
-  int play_message_sent = 0;
-  int bytes = 0;
-  struct sockaddr_in udp_rtp_sender_addr;
-  socklen_t udp_rtp_sender_addr_size = sizeof(udp_rtp_sender_addr);
-  char buffer[STREAM_BUFFER_SIZE];
+            socklen_t udp_rtcp_client_addr_size) {
 
-  int found_first_flag = 0;
+  pthread_t rtp_thread;
+  pthread_t rtcp_thread;
+  int threads_waiting = 1;
 
-  while (1) {
+  while (threads_waiting == 1) {
     if (*play != 0) {
-      if (play_message_sent == 0) {
-        printf(
-            "udp_rtp_server_fd: %d, udp_rtcp_server_fd: %d, udp_rtp_client_fd: "
-            "%d, udp_rtcp_client_fd: %d\n\n",
-            udp_rtp_server_fd, udp_rtcp_server_fd, *udp_rtp_client_fd,
-            *udp_rtcp_client_fd);
-        printf("RTP Address: %s:%d\n\n",
-               inet_ntoa(udp_rtp_client_addr->sin_addr),
-               ntohs(udp_rtp_client_addr->sin_port));
-        printf("RTCP Address: %s:%d\n\n",
-               inet_ntoa(udp_rtcp_client_addr->sin_addr),
-               ntohs(udp_rtcp_client_addr->sin_port));
-        play_message_sent = 1;
-      }
 
-      bytes = recvfrom(udp_rtp_server_fd, buffer, STREAM_BUFFER_SIZE, 0,
-                       (struct sockaddr *)&udp_rtp_sender_addr,
-                       &udp_rtp_sender_addr_size);
+      struct stream_data rtp_data;
+      rtp_data.udp_server_fd = udp_rtp_server_fd;
+      rtp_data.udp_client_fd = *udp_rtp_client_fd;
+      rtp_data.udp_client_addr = *udp_rtp_client_addr;
+      rtp_data.udp_client_addr_size = udp_rtp_client_addr_size;
 
-      if (bytes < 0) {
-        perror("failed to get bytes");
-        continue;
-      } else {
+      struct stream_data rtcp_data;
+      rtcp_data.udp_server_fd = udp_rtcp_server_fd;
+      rtcp_data.udp_client_fd = *udp_rtcp_client_fd;
+      rtcp_data.udp_client_addr = *udp_rtcp_client_addr;
+      rtcp_data.udp_client_addr_size = udp_rtcp_client_addr_size;
 
-        printf("Sending BUFFER SIZE: %d\n\n\n", bytes);
-        sendto(*udp_rtp_client_fd, buffer, bytes, 0,
-               (struct sockaddr *)udp_rtp_client_addr,
-               udp_rtp_client_addr_size);
-        memset(buffer, 0, sizeof(buffer));
-      }
+      pthread_create(&rtp_thread, NULL, stream_protocol, &rtp_data);
+      pthread_create(&rtcp_thread, NULL, stream_protocol, &rtcp_data);
+      threads_waiting = 0;
     }
   }
 }
