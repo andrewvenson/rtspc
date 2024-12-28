@@ -15,7 +15,7 @@
 #define PORT 8081
 #define UDP_PORT 8082
 #define UDP_RTCP_PORT 8083
-#define BUFFER_SIZE 2048
+#define TCP_RTSP_BUFFER_SIZE 2048
 #define STREAM_BUFFER_SIZE 1500
 #define max_clients 10
 
@@ -49,9 +49,8 @@
 
 typedef struct {
   int *play;
-  char *buffer;
   int *recording;
-  int client_fd;
+  int tcp_client_fd;
   int udp_rtp_server_fd;
   int udp_rtcp_server_fd;
   int *udp_rtp_client_fd;
@@ -400,10 +399,10 @@ int get_udp_client_ports(char *buffer, int buffer_size, int *rtp_port,
 }
 
 void *handle_requests(void *arg) {
-  int buffer_size = 0;
   Handle_Request_Args *args = (Handle_Request_Args *)arg;
-  int client_fd = args->client_fd;
-  char *buffer = args->buffer;
+  int buffer_size = 0;
+  int tcp_client_fd = args->tcp_client_fd;
+  char buffer[TCP_RTSP_BUFFER_SIZE];
 
   int rtp_port;
   int rtcp_port;
@@ -413,7 +412,8 @@ void *handle_requests(void *arg) {
   memset(rtcp_port_char, 0, 12);
 
   while (1) {
-    if ((buffer_size = recv(client_fd, buffer, BUFFER_SIZE - 1, 0)) > 0) {
+    if ((buffer_size =
+             recv(tcp_client_fd, buffer, TCP_RTSP_BUFFER_SIZE - 1, 0)) > 0) {
       buffer[buffer_size] = '\0';
       char method[10];
       memset(method, 0, sizeof(method));
@@ -421,42 +421,43 @@ void *handle_requests(void *arg) {
       get_method(buffer, buffer_size, method);
 
       if (strcmp(method, "OPTIONS") == 0) {
-        options(buffer, client_fd);
+        options(buffer, tcp_client_fd);
       } else if (strcmp(method, "DESCRIBE") == 0) {
-        describe(buffer, client_fd, args->recording);
+        describe(buffer, tcp_client_fd, args->recording);
       } else if (strcmp(method, "SETUP") == 0) {
         printf("%s\n\n", buffer);
         get_udp_client_ports(buffer, buffer_size, &rtp_port, &rtcp_port,
                              rtp_port_char, rtcp_port_char);
-        setup(buffer, client_fd, args->recording, rtp_port, rtcp_port,
+        setup(buffer, tcp_client_fd, args->recording, rtp_port, rtcp_port,
               rtp_port_char, rtcp_port_char, args->udp_rtp_client_fd,
               args->udp_rtcp_client_fd, args->udp_rtp_client_addr,
               args->udp_rtcp_client_addr);
       } else if (strcmp(method, "ANNOUNCE") == 0) {
-        announce(buffer, client_fd);
+        announce(buffer, tcp_client_fd);
       } else if (strcmp(method, "RECORD") == 0) {
-        record(buffer, client_fd, args->play, args->recording,
+        record(buffer, tcp_client_fd, args->play, args->recording,
                args->udp_rtp_server_fd, args->udp_rtcp_server_fd,
                args->udp_rtp_client_fd, args->udp_rtcp_client_fd,
                args->udp_rtp_client_addr, args->udp_rtcp_client_addr,
                args->udp_rtp_client_addr_size, args->udp_rtcp_client_addr_size);
       } else if (strcmp(method, "PLAY") == 0) {
-        play(buffer, client_fd, args->play);
+        play(buffer, tcp_client_fd, args->play);
       }
     }
+    memset(buffer, 0, sizeof(buffer));
   }
-
-  printf("closing");
-  close(client_fd);
 }
 
 int main() {
-  char buffer[max_clients][BUFFER_SIZE];
-  int client_fds[max_clients] = {0};
+  int tcp_client_fds[max_clients] = {0};
   pthread_t threads[max_clients] = {0};
   pthread_t threads_used[max_clients] = {0};
   int recording = 0;
   int play = 0;
+
+  memset(threads_used, 0, sizeof(threads_used));
+  memset(threads, 0, sizeof(threads));
+  memset(tcp_client_fds, 0, sizeof(tcp_client_fds));
 
   int tcp_rtsp_server_fd;
   int udp_rtp_client_fd;
@@ -470,6 +471,12 @@ int main() {
   struct sockaddr_in udp_rtcp_server_addr;
   struct sockaddr_in udp_rtp_client_addr;
   struct sockaddr_in udp_rtcp_client_addr;
+  memset(&tcp_rtsp_server_addr, 0, sizeof(tcp_rtsp_server_addr));
+  memset(&tcp_rtsp_server_addr, 0, sizeof(tcp_rtsp_server_addr));
+  memset(&udp_rtp_client_addr, 0, sizeof(udp_rtp_client_addr));
+  memset(&udp_rtcp_client_addr, 0, sizeof(udp_rtcp_client_addr));
+  memset(&udp_rtp_server_addr, 0, sizeof(udp_rtp_server_addr));
+  memset(&udp_rtcp_server_addr, 0, sizeof(udp_rtcp_server_addr));
 
   socklen_t tcp_rtsp_client_addr_size = sizeof(tcp_rtsp_client_addr);
   socklen_t udp_rtp_client_addr_size = sizeof(udp_rtp_client_addr);
@@ -479,8 +486,6 @@ int main() {
 
   setbuf(stdout, NULL); // disable buffering to allow printing to file
   //
-  memset(&udp_rtp_client_addr, 0, sizeof(udp_rtp_client_addr));
-  memset(&udp_rtcp_client_addr, 0, sizeof(udp_rtcp_client_addr));
 
   tcp_rtsp_server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (tcp_rtsp_server_fd < 0) {
@@ -561,42 +566,36 @@ int main() {
 
   printf("Listening for connections on port: %d\n\n", PORT);
 
-  memset(threads_used, 0, sizeof(threads_used));
-  memset(threads, 0, sizeof(threads));
-  memset(client_fds, 0, sizeof(client_fds));
-
   while (1) {
     printf("Getting connections...\n");
 
     for (int client_fd_index = 0; client_fd_index < max_clients;
          client_fd_index++) {
-      memset(buffer[client_fd_index], 0, sizeof(buffer[client_fd_index]));
-
-      if (client_fds[client_fd_index] == 0 &&
+      if (tcp_client_fds[client_fd_index] == 0 &&
           threads_used[client_fd_index] == 0) {
-        printf("Connection file descriptor: %d\n", client_fds[client_fd_index]);
+        printf("Connection file descriptor: %d\n",
+               tcp_client_fds[client_fd_index]);
 
         threads_used[client_fd_index] = 1;
 
         // getting rtsp tcp data
-        client_fds[client_fd_index] =
+        tcp_client_fds[client_fd_index] =
             accept(tcp_rtsp_server_fd, (struct sockaddr *)&tcp_rtsp_client_addr,
                    &tcp_rtsp_client_addr_size);
 
-        if (client_fds[client_fd_index] < 0) {
+        if (tcp_client_fds[client_fd_index] < 0) {
           perror("Error connecting...\n");
           continue;
         }
 
         printf("Accepted Connection on file descriptor: %d\n",
-               client_fds[client_fd_index]);
+               tcp_client_fds[client_fd_index]);
 
         Handle_Request_Args args;
         memset(&args, 0, sizeof(args));
 
-        args.client_fd = client_fds[client_fd_index];
+        args.tcp_client_fd = tcp_client_fds[client_fd_index];
         args.play = &play;
-        args.buffer = buffer[client_fd_index];
         args.recording = &recording;
         args.udp_rtp_server_fd = udp_rtp_server_fd;
         args.udp_rtcp_server_fd = udp_rtcp_server_fd;
@@ -612,7 +611,7 @@ int main() {
         pthread_create(&threads[client_fd_index], NULL, handle_requests, &args);
       } else {
         printf("client already listening on file descriptor: %d\n",
-               client_fds[client_fd_index]);
+               tcp_client_fds[client_fd_index]);
       }
     }
   }
