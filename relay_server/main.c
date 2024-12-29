@@ -24,7 +24,7 @@
  0 -fflags +genpts \
  -c:v libx264 \
  -x264-params "keyint=60:no-scenecut=1" \
- -f rtsp rtsp://192.168.1.29:8081
+ -f rtsp rtsp://127.0.0.1:8081
 */
 
 // The following command plays live stream from  client
@@ -57,6 +57,7 @@ typedef struct {
   socklen_t udp_rtp_client_addr_size;
   struct sockaddr_in *udp_rtcp_client_addr;
   socklen_t udp_rtcp_client_addr_size;
+  char *rtsp_relay_server_ip;
 } Handle_Request_Args;
 
 struct stream_data {
@@ -162,21 +163,25 @@ void record(char *buffer, int client_fd, int *play, int *recording,
             socklen_t udp_rtp_client_addr_size,
             socklen_t udp_rtcp_client_addr_size) {
   printf("%s\n\n", buffer);
+
   char time_buffer[200];
   char response_date[87];
   char record_response[512];
   memset(record_response, 0, sizeof(record_response));
   memset(response_date, 0, sizeof(response_date));
   memset(record_response, 0, sizeof(record_response));
+
   strcat(record_response, "RTSP/1.0 200 OK\r\n");
   strcat(record_response, "CSeq: 4\r\n");
   strcat(record_response, "Session: 12345678\r\n");
   get_date(time_buffer, sizeof(time_buffer));
   strcat(record_response, time_buffer);
   strcat(record_response, "\r\n\r\n");
+
   printf("%s\n\n", record_response);
   send(client_fd, record_response, strlen(record_response), 0);
   *recording = 1;
+
   stream(play, udp_rtp_server_fd, udp_rtcp_server_fd, udp_rtp_client_fd,
          udp_rtcp_client_fd, udp_rtp_client_addr, udp_rtp_client_addr_size,
          udp_rtcp_client_addr, udp_rtcp_client_addr_size);
@@ -241,6 +246,7 @@ void setup(char *buffer, int client_fd, int *recording, int rtp_port,
   printf("%s\n\n", buffer);
   char setup_response[300];
   memset(setup_response, 0, sizeof(setup_response));
+
   strcat(setup_response, "RTSP/1.0 200 OK\r\n");
   strcat(setup_response, "CSeq: 3\r\n");
   strcat(setup_response, "Transport: RTP/AVP/UDP;unicast;client_port=");
@@ -250,36 +256,45 @@ void setup(char *buffer, int client_fd, int *recording, int rtp_port,
   strcat(setup_response, ";server_port=8082-8083");
   strcat(setup_response, "\r\n");
   strcat(setup_response, "Session: 12345678\r\n\r\n");
-  printf("%s\n\n", setup_response);
 
   if (*recording == 1) {
     *udp_rtp_client_fd = create_client_udp_fd(rtp_port, udp_rtp_client_address);
     *udp_rtcp_client_fd =
         create_client_udp_fd(rtcp_port, udp_rtcp_client_address);
   }
+
+  printf("%s\n\n", setup_response);
   send(client_fd, setup_response, strlen(setup_response), 0);
 }
 
-void describe(char *buffer, int client_fd, int *recording) {
+void describe(char *buffer, int client_fd, int *recording,
+              char *rtsp_relay_server_ip) {
   printf("%s\n\n", buffer);
   char describe_response[500];
+  char port[10];
   memset(describe_response, 0, sizeof(describe_response));
+  // snprintf(port, sizeof(port), "%d", PORT);
+
   strcat(describe_response, "RTSP/1.0 200 OK\r\n");
-  if (client_fd == 5 || client_fd == 6 || client_fd == 7 || client_fd == 8) {
-    strcat(describe_response, "CSeq: 2\r\n");
-  } else {
-    strcat(describe_response, "CSeq: 2\r\n");
-  }
-  strcat(describe_response, "Content-Base: rtsp://192.168.1.29:8081/\r\n");
+  strcat(describe_response, "CSeq: 2\r\n");
+  strcat(describe_response, "Content-Base: rtsp://");
+  strcat(describe_response, rtsp_relay_server_ip);
+  strcat(describe_response, ":");
+  strcat(describe_response, "8081");
+  strcat(describe_response, "/\r\n");
   strcat(describe_response, "Content-Type: application/sdp\r\n");
   strcat(describe_response, "Content-Length: 281\r\n");
   strcat(describe_response, "\r\n");
 
   if (*recording == 1) {
     strcat(describe_response, "v=0\r\n");
-    strcat(describe_response, "o=- 0 0 IN IP4 192.168.1.29\r\n");
+    strcat(describe_response, "o=- 0 0 IN IP4 ");
+    strcat(describe_response, rtsp_relay_server_ip);
+    strcat(describe_response, "\r\n");
     strcat(describe_response, "s=RTSP Session\r\n");
-    strcat(describe_response, "c=IN IP4 0.0.0.0\r\n");
+    strcat(describe_response, "c=IN IP4 ");
+    strcat(describe_response, rtsp_relay_server_ip);
+    strcat(describe_response, "\r\n");
     strcat(describe_response, "t=0 0\r\n");
     strcat(describe_response, "a=control:*\r\n");
     strcat(describe_response, "m=video 0 RTP/AVP 96\r\n");
@@ -290,22 +305,22 @@ void describe(char *buffer, int client_fd, int *recording) {
            " profile-level-id=7A0016\r\n");
     strcat(describe_response, "a=control:streamid=0\r\n");
   }
+
   printf("Sending DESCRIBE: %s\n\n", describe_response);
   send(client_fd, describe_response, strlen(describe_response), 0);
 }
 
 void options(char *buffer, int client_fd) {
   printf("%s\n\n", buffer);
-  char options_response[90];
+
+  char options_response[100];
   memset(options_response, 0, sizeof(options_response));
+
   strcat(options_response, "RTSP/1.0 200 OK\r\n");
-  if (client_fd == 5 || client_fd == 6 || client_fd == 7 || client_fd == 8) {
-    strcat(options_response, "CSeq: 1\r\n");
-  } else {
-    strcat(options_response, "CSeq: 1\r\n");
-  }
+  strcat(options_response, "CSeq: 1\r\n");
   strcat(options_response, "Public: OPTIONS, DESCRIBE, SETUP, PLAY, "
                            "PAUSE, RECORD, TEARDOWN, ANNOUNCE\r\n\r\n");
+
   printf("%s\n\n", options_response);
   send(client_fd, options_response, strlen(options_response), 0);
 }
@@ -401,6 +416,7 @@ void *handle_requests(void *arg) {
   int buffer_size = 0;
   int tcp_client_fd = args->tcp_client_fd;
   char buffer[TCP_RTSP_BUFFER_SIZE];
+  char *rtsp_relay_server_ip = args->rtsp_relay_server_ip;
 
   int rtp_port;
   int rtcp_port;
@@ -421,7 +437,7 @@ void *handle_requests(void *arg) {
       if (strcmp(method, "OPTIONS") == 0) {
         options(buffer, tcp_client_fd);
       } else if (strcmp(method, "DESCRIBE") == 0) {
-        describe(buffer, tcp_client_fd, args->recording);
+        describe(buffer, tcp_client_fd, args->recording, rtsp_relay_server_ip);
       } else if (strcmp(method, "SETUP") == 0) {
         printf("%s\n\n", buffer);
         get_udp_client_ports(buffer, buffer_size, &rtp_port, &rtcp_port,
@@ -449,16 +465,19 @@ void *handle_requests(void *arg) {
 int main(int argc, char **argv) {
   setbuf(stdout, NULL); // disable buffering to allow printing to file
 
-  char rtsp_relay_server_ip[20];
-  memset(rtsp_relay_server_ip, 0, sizeof(rtsp_relay_server_ip));
-  
-  if(argc < 2){
+  if (argc < 2) {
     printf("Must pass relay server public IP Address\n\n");
     return EXIT_FAILURE;
   }
 
-  // for(int x = 0; x < argc; x++){
-  // }
+  char rtsp_relay_server_ip[16];
+  memset(rtsp_relay_server_ip, 0, sizeof(rtsp_relay_server_ip));
+  for (int x = 0; argv[1][x] != '\0'; x++) {
+    rtsp_relay_server_ip[x] = argv[1][x];
+  }
+  rtsp_relay_server_ip[15] = '\0';
+
+  printf("RELAY IP: %s\n\n", rtsp_relay_server_ip);
 
   int tcp_client_fds[max_clients] = {0};
   pthread_t threads[max_clients] = {0};
@@ -480,7 +499,7 @@ int main(int argc, char **argv) {
   struct sockaddr_in udp_rtcp_server_addr;
   struct sockaddr_in udp_rtp_client_addr;
   struct sockaddr_in udp_rtcp_client_addr;
-  
+
   memset(&tcp_rtsp_server_addr, 0, sizeof(tcp_rtsp_server_addr));
   memset(&tcp_rtsp_server_addr, 0, sizeof(tcp_rtsp_server_addr));
   memset(&udp_rtp_client_addr, 0, sizeof(udp_rtp_client_addr));
@@ -571,7 +590,8 @@ int main(int argc, char **argv) {
     return -1;
   }
 
-  printf("Listening for connections on port: %d\n\n", PORT);
+  printf("Listening for connections on:  %s:%d\n\n", rtsp_relay_server_ip,
+         PORT);
 
   while (1) {
     printf("Getting connections...\n");
@@ -584,7 +604,7 @@ int main(int argc, char **argv) {
 
         // create pthread here no need to have pthreads in an array
         pthread_t thread;
-        
+
         // getting rtsp tcp data
         tcp_client_fds[client_fd_index] =
             accept(tcp_rtsp_server_fd, (struct sockaddr *)&tcp_rtsp_client_addr,
@@ -614,6 +634,7 @@ int main(int argc, char **argv) {
         args.udp_rtcp_client_fd = &udp_rtcp_client_fd;
         args.udp_rtcp_client_addr = &udp_rtcp_client_addr;
         args.udp_rtcp_client_addr_size = udp_rtcp_client_addr_size;
+        args.rtsp_relay_server_ip = rtsp_relay_server_ip;
 
         pthread_create(&thread, NULL, handle_requests, &args);
       } else {
