@@ -1,6 +1,4 @@
 #include <arpa/inet.h>
-#include <asm-generic/socket.h>
-#include <bits/time.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -448,14 +446,25 @@ void *handle_requests(void *arg) {
   }
 }
 
-int main() {
+int main(int argc, char **argv) {
+  setbuf(stdout, NULL); // disable buffering to allow printing to file
+
+  char rtsp_relay_server_ip[20];
+  memset(rtsp_relay_server_ip, 0, sizeof(rtsp_relay_server_ip));
+  
+  if(argc < 2){
+    printf("Must pass relay server public IP Address\n\n");
+    return EXIT_FAILURE;
+  }
+
+  // for(int x = 0; x < argc; x++){
+  // }
+
   int tcp_client_fds[max_clients] = {0};
   pthread_t threads[max_clients] = {0};
-  pthread_t threads_used[max_clients] = {0};
   int recording = 0;
   int play = 0;
 
-  memset(threads_used, 0, sizeof(threads_used));
   memset(threads, 0, sizeof(threads));
   memset(tcp_client_fds, 0, sizeof(tcp_client_fds));
 
@@ -471,6 +480,7 @@ int main() {
   struct sockaddr_in udp_rtcp_server_addr;
   struct sockaddr_in udp_rtp_client_addr;
   struct sockaddr_in udp_rtcp_client_addr;
+  
   memset(&tcp_rtsp_server_addr, 0, sizeof(tcp_rtsp_server_addr));
   memset(&tcp_rtsp_server_addr, 0, sizeof(tcp_rtsp_server_addr));
   memset(&udp_rtp_client_addr, 0, sizeof(udp_rtp_client_addr));
@@ -483,9 +493,6 @@ int main() {
   socklen_t udp_rtcp_client_addr_size = sizeof(udp_rtcp_client_addr);
 
   int opt = 1;
-
-  setbuf(stdout, NULL); // disable buffering to allow printing to file
-  //
 
   tcp_rtsp_server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (tcp_rtsp_server_fd < 0) {
@@ -571,13 +578,13 @@ int main() {
 
     for (int client_fd_index = 0; client_fd_index < max_clients;
          client_fd_index++) {
-      if (tcp_client_fds[client_fd_index] == 0 &&
-          threads_used[client_fd_index] == 0) {
+      if (tcp_client_fds[client_fd_index] == 0) {
         printf("Connection file descriptor: %d\n",
                tcp_client_fds[client_fd_index]);
 
-        threads_used[client_fd_index] = 1;
-
+        // create pthread here no need to have pthreads in an array
+        pthread_t thread;
+        
         // getting rtsp tcp data
         tcp_client_fds[client_fd_index] =
             accept(tcp_rtsp_server_fd, (struct sockaddr *)&tcp_rtsp_client_addr,
@@ -608,7 +615,7 @@ int main() {
         args.udp_rtcp_client_addr = &udp_rtcp_client_addr;
         args.udp_rtcp_client_addr_size = udp_rtcp_client_addr_size;
 
-        pthread_create(&threads[client_fd_index], NULL, handle_requests, &args);
+        pthread_create(&thread, NULL, handle_requests, &args);
       } else {
         printf("client already listening on file descriptor: %d\n",
                tcp_client_fds[client_fd_index]);
@@ -617,6 +624,8 @@ int main() {
   }
 
   close(tcp_rtsp_server_fd);
+  close(udp_rtp_client_fd);
+  close(udp_rtcp_client_fd);
   close(udp_rtp_server_fd);
   close(udp_rtcp_server_fd);
 
