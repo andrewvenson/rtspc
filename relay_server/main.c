@@ -505,18 +505,14 @@ int main(int argc, char **argv) {
   for (int x = 0; argv[1][x] != '\0'; x++) {
     rtsp_relay_server_ip[x] = argv[1][x];
   }
-  rtsp_relay_server_ip[15] = '\0';
-
-  printf("RELAY IP: %s\n\n", rtsp_relay_server_ip);
 
   int tcp_client_fds[max_clients] = {0};
-  pthread_t threads[max_clients] = {0};
   int recording = 0;
   int play = 0;
   char sdp[300];
 
-  memset(threads, 0, sizeof(threads));
   memset(tcp_client_fds, 0, sizeof(tcp_client_fds));
+  memset(sdp, 0, sizeof(sdp));
 
   int tcp_rtsp_server_fd;
   int udp_rtp_client_fd;
