@@ -441,8 +441,9 @@ void *handle_requests(void *arg) {
   Handle_Request_Args *args = (Handle_Request_Args *)arg;
   int buffer_size = 0;
   int tcp_client_fd = args->tcp_client_fd;
-  char buffer[TCP_RTSP_BUFFER_SIZE];
   char *rtsp_relay_server_ip = args->rtsp_relay_server_ip;
+  char buffer[TCP_RTSP_BUFFER_SIZE];
+  memset(buffer, 0, sizeof(buffer));
 
   int rtp_port;
   int rtcp_port;
