@@ -156,14 +156,18 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
   }
 }
 
-void record(char *buffer, int client_fd, int *play, int *recording,
-            int udp_rtp_server_fd, int udp_rtcp_server_fd,
-            int *udp_rtp_client_fd, int *udp_rtcp_client_fd,
-            struct sockaddr_in *udp_rtp_client_addr,
-            struct sockaddr_in *udp_rtcp_client_addr,
-            socklen_t udp_rtp_client_addr_size,
-            socklen_t udp_rtcp_client_addr_size) {
+void record(char *buffer, int client_fd, Handle_Request_Args *args) {
   printf("%s\n\n", buffer);
+  int *play = args->play;
+  int *recording = args->recording;
+  int udp_rtp_server_fd = args->udp_rtp_server_fd;
+  int udp_rtcp_server_fd = args->udp_rtcp_server_fd;
+  int *udp_rtp_client_fd = args->udp_rtp_client_fd;
+  int *udp_rtcp_client_fd = args->udp_rtcp_client_fd;
+  struct sockaddr_in *udp_rtp_client_addr = args->udp_rtp_client_addr;
+  struct sockaddr_in *udp_rtcp_client_addr = args->udp_rtcp_client_addr;
+  socklen_t udp_rtp_client_addr_size = args->udp_rtp_client_addr_size;
+  socklen_t udp_rtcp_client_addr_size = args->udp_rtcp_client_addr_size;
 
   char time_buffer[200];
   char response_date[87];
@@ -242,13 +246,16 @@ int create_client_udp_fd(int port, struct sockaddr_in *udp_client_addr) {
 }
 
 // udp
-void setup(char *buffer, int client_fd, int *recording, int rtp_port,
-           int rtcp_port, char *rtp_port_char, char *rtcp_port_char,
-           int *udp_rtp_client_fd, int *udp_rtcp_client_fd,
-           struct sockaddr_in *udp_rtp_client_address,
-           struct sockaddr_in *udp_rtcp_client_address) {
+void setup(char *buffer, int rtp_port, int rtcp_port, char *rtp_port_char,
+           char *rtcp_port_char, Handle_Request_Args *args) {
   printf("%s\n\n", buffer);
 
+  int tcp_client_fd = args->tcp_client_fd;
+  int *recording = args->recording;
+  int *udp_rtp_client_fd = args->udp_rtp_client_fd;
+  int *udp_rtcp_client_fd = args->udp_rtcp_client_fd;
+  struct sockaddr_in *udp_rtp_client_addr = args->udp_rtp_client_addr;
+  struct sockaddr_in *udp_rtcp_client_address = args->udp_rtcp_client_addr;
   char setup_response[300];
   memset(setup_response, 0, sizeof(setup_response));
 
@@ -263,18 +270,22 @@ void setup(char *buffer, int client_fd, int *recording, int rtp_port,
   strcat(setup_response, "Session: 12345678\r\n\r\n");
 
   if (*recording == 1) {
-    *udp_rtp_client_fd = create_client_udp_fd(rtp_port, udp_rtp_client_address);
+    *udp_rtp_client_fd = create_client_udp_fd(rtp_port, udp_rtp_client_addr);
     *udp_rtcp_client_fd =
         create_client_udp_fd(rtcp_port, udp_rtcp_client_address);
   }
 
   printf("%s\n\n", setup_response);
-  send(client_fd, setup_response, strlen(setup_response), 0);
+  send(tcp_client_fd, setup_response, strlen(setup_response), 0);
 }
 
-void describe(char *buffer, int client_fd, int *recording,
-              char *rtsp_relay_server_ip, char *sdp) {
+void describe(char *buffer, Handle_Request_Args *args) {
   printf("%s\n\n", buffer);
+
+  int tcp_client_fd = args->tcp_client_fd;
+  int *recording = args->recording;
+  char *rtsp_relay_server_ip = args->rtsp_relay_server_ip;
+  char *sdp = args->sdp;
 
   char describe_response[500];
   char port[10];
@@ -322,7 +333,7 @@ void describe(char *buffer, int client_fd, int *recording,
   strcat(describe_response, describe_content);
 
   printf("Sending DESCRIBE: %s\n\n", describe_response);
-  send(client_fd, describe_response, strlen(describe_response), 0);
+  send(tcp_client_fd, describe_response, strlen(describe_response), 0);
 }
 
 void options(char *buffer, int client_fd) {
@@ -440,8 +451,6 @@ void get_sprop(char *sprop, char *buffer, int buffer_size) {
 void *handle_requests(void *arg) {
   Handle_Request_Args *args = (Handle_Request_Args *)arg;
   int buffer_size = 0;
-  int tcp_client_fd = args->tcp_client_fd;
-  char *rtsp_relay_server_ip = args->rtsp_relay_server_ip;
   char buffer[TCP_RTSP_BUFFER_SIZE];
   memset(buffer, 0, sizeof(buffer));
 
@@ -453,8 +462,8 @@ void *handle_requests(void *arg) {
   memset(rtcp_port_char, 0, 12);
 
   while (1) {
-    if ((buffer_size =
-             recv(tcp_client_fd, buffer, TCP_RTSP_BUFFER_SIZE - 1, 0)) > 0) {
+    if ((buffer_size = recv(args->tcp_client_fd, buffer,
+                            TCP_RTSP_BUFFER_SIZE - 1, 0)) > 0) {
       buffer[buffer_size] = '\0';
       char method[10];
       memset(method, 0, sizeof(method));
@@ -466,27 +475,19 @@ void *handle_requests(void *arg) {
       }
 
       if (strcmp(method, "OPTIONS") == 0) {
-        options(buffer, tcp_client_fd);
+        options(buffer, args->tcp_client_fd);
       } else if (strcmp(method, "DESCRIBE") == 0) {
-        describe(buffer, tcp_client_fd, args->recording, rtsp_relay_server_ip,
-                 args->sdp);
+        describe(buffer, args);
       } else if (strcmp(method, "SETUP") == 0) {
         get_udp_client_ports(buffer, buffer_size, &rtp_port, &rtcp_port,
                              rtp_port_char, rtcp_port_char);
-        setup(buffer, tcp_client_fd, args->recording, rtp_port, rtcp_port,
-              rtp_port_char, rtcp_port_char, args->udp_rtp_client_fd,
-              args->udp_rtcp_client_fd, args->udp_rtp_client_addr,
-              args->udp_rtcp_client_addr);
+        setup(buffer, rtp_port, rtcp_port, rtp_port_char, rtcp_port_char, args);
       } else if (strcmp(method, "ANNOUNCE") == 0) {
-        announce(buffer, tcp_client_fd);
+        announce(buffer, args->tcp_client_fd);
       } else if (strcmp(method, "RECORD") == 0) {
-        record(buffer, tcp_client_fd, args->play, args->recording,
-               args->udp_rtp_server_fd, args->udp_rtcp_server_fd,
-               args->udp_rtp_client_fd, args->udp_rtcp_client_fd,
-               args->udp_rtp_client_addr, args->udp_rtcp_client_addr,
-               args->udp_rtp_client_addr_size, args->udp_rtcp_client_addr_size);
+        record(buffer, args->tcp_client_fd, args);
       } else if (strcmp(method, "PLAY") == 0) {
-        play(buffer, tcp_client_fd, args->play);
+        play(buffer, args->tcp_client_fd, args->play);
       }
     }
     memset(buffer, 0, sizeof(buffer));
