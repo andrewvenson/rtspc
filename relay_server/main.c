@@ -89,7 +89,6 @@ void *stream_protocol(void *data) {
   int udp_client_fd = sd->udp_client_fd;
   struct sockaddr_in udp_client_addr = sd->udp_client_addr;
   socklen_t udp_client_addr_size = sd->udp_client_addr_size;
-
   int play_message_sent = 0;
   int bytes = 0;
   struct sockaddr_in udp_sender_addr;
@@ -105,7 +104,7 @@ void *stream_protocol(void *data) {
       play_message_sent = 1;
     }
 
-    printf("Sending on PORT: %d\n\n", ntohs(udp_client_addr.sin_port));
+    // printf("Sending on PORT: %d\n\n", ntohs(udp_client_addr.sin_port));
 
     bytes =
         recvfrom(udp_server_fd, buffer, STREAM_BUFFER_SIZE, 0,
@@ -115,7 +114,6 @@ void *stream_protocol(void *data) {
       perror("failed to get bytes");
       continue;
     } else {
-      // printf("Sending BUFFER SIZE: %d\n\n\n", bytes);
       sendto(udp_client_fd, buffer, bytes, 0,
              (struct sockaddr *)&udp_client_addr, udp_client_addr_size);
       memset(buffer, 0, sizeof(buffer));
@@ -128,7 +126,7 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
             struct sockaddr_in *udp_rtp_client_addr,
             socklen_t udp_rtp_client_addr_size,
             struct sockaddr_in *udp_rtcp_client_addr,
-            socklen_t udp_rtcp_client_addr_size) {
+            socklen_t udp_rtcp_client_addr_size, int *recording) {
 
   pthread_t rtp_thread;
   pthread_t rtcp_thread;
@@ -152,6 +150,9 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
       pthread_create(&rtp_thread, NULL, stream_protocol, &rtp_data);
       pthread_create(&rtcp_thread, NULL, stream_protocol, &rtcp_data);
       threads_waiting = 0;
+      // this resets us allowing for other clients to connect on different ports
+      *play = 0;
+      *recording = 0;
     }
   }
 }
@@ -189,7 +190,7 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args) {
 
   stream(play, udp_rtp_server_fd, udp_rtcp_server_fd, udp_rtp_client_fd,
          udp_rtcp_client_fd, udp_rtp_client_addr, udp_rtp_client_addr_size,
-         udp_rtcp_client_addr, udp_rtcp_client_addr_size);
+         udp_rtcp_client_addr, udp_rtcp_client_addr_size, recording);
 }
 
 void play(char *buffer, int client_fd, int *play) {
@@ -208,9 +209,7 @@ void play(char *buffer, int client_fd, int *play) {
 
   send(client_fd, play_response, strlen(play_response), 0);
 
-  if (client_fd == 7) {
-    *play = 1;
-  }
+  *play = 1;
 }
 
 void announce(char *buffer, int client_fd) {
@@ -509,9 +508,9 @@ int main(int argc, char **argv) {
   }
 
   int tcp_client_fds[max_clients] = {0};
+  char sdp[300];
   int recording = 0;
   int play = 0;
-  char sdp[300];
 
   memset(tcp_client_fds, 0, sizeof(tcp_client_fds));
   memset(sdp, 0, sizeof(sdp));
@@ -584,15 +583,6 @@ int main(int argc, char **argv) {
   udp_rtcp_server_addr.sin_addr.s_addr = INADDR_ANY;
   udp_rtcp_server_addr.sin_port = htons(UDP_RTCP_PORT);
 
-  if (bind(tcp_rtsp_server_fd, (struct sockaddr *)&tcp_rtsp_server_addr,
-           sizeof(tcp_rtsp_server_addr)) < 0) {
-    perror("Error binding socket to server address");
-    close(tcp_rtsp_server_fd);
-    close(udp_rtp_server_fd);
-    close(udp_rtcp_server_fd);
-    return -1;
-  }
-
   if (bind(udp_rtp_server_fd, (struct sockaddr *)&udp_rtp_server_addr,
            sizeof(udp_rtp_server_addr)) < 0) {
     perror("Error binding socket to udp server address");
@@ -611,6 +601,15 @@ int main(int argc, char **argv) {
     return -1;
   }
 
+  if (bind(tcp_rtsp_server_fd, (struct sockaddr *)&tcp_rtsp_server_addr,
+           sizeof(tcp_rtsp_server_addr)) < 0) {
+    perror("Error binding socket to server address");
+    close(tcp_rtsp_server_fd);
+    close(udp_rtp_server_fd);
+    close(udp_rtcp_server_fd);
+    return -1;
+  }
+
   if (listen(tcp_rtsp_server_fd, max_clients) < 0) {
     perror("Error listening for server connections");
     close(tcp_rtsp_server_fd);
@@ -621,6 +620,14 @@ int main(int argc, char **argv) {
 
   printf("Listening for connections on:  %s:%d\n\n", rtsp_relay_server_ip,
          PORT);
+
+  /*
+   * Each camera connecting can use port 8081 for rtsp
+   * (tcp communication handshake)
+   * But new udp ports need to be used for each camera
+   * (server udp rtp and rtcp ports)
+   * separate thread of execution for each
+   */
 
   while (1) {
     printf("Getting connections...\n");
@@ -654,17 +661,14 @@ int main(int argc, char **argv) {
         args.play = &play;
         args.recording = &recording;
         args.udp_rtp_server_fd = udp_rtp_server_fd;
-        args.udp_rtcp_server_fd = udp_rtcp_server_fd;
-
         args.udp_rtp_client_fd = &udp_rtp_client_fd;
         args.udp_rtp_client_addr = &udp_rtp_client_addr;
         args.udp_rtp_client_addr_size = udp_rtp_client_addr_size;
-
+        args.udp_rtcp_server_fd = udp_rtcp_server_fd;
         args.udp_rtcp_client_fd = &udp_rtcp_client_fd;
         args.udp_rtcp_client_addr = &udp_rtcp_client_addr;
         args.udp_rtcp_client_addr_size = udp_rtcp_client_addr_size;
         args.rtsp_relay_server_ip = rtsp_relay_server_ip;
-
         args.sdp = sdp;
 
         pthread_create(&thread, NULL, handle_requests, &args);
