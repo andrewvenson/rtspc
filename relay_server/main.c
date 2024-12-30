@@ -645,6 +645,10 @@ int main(int argc, char **argv) {
                tcp_client_fds[client_fd_index]);
 
         if (streaming_set == 1) {
+          // we probably shouldn't reset the server and client ip addresses that
+          // are being used, we'll need an array of these or something we'll
+          // come back to this
+
           memset(&udp_rtp_client_addr, 0, sizeof(udp_rtp_client_addr));
           memset(&udp_rtcp_client_addr, 0, sizeof(udp_rtcp_client_addr));
           memset(&udp_rtp_server_addr, 0, sizeof(udp_rtp_server_addr));
