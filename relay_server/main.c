@@ -48,7 +48,6 @@
 typedef struct {
   int *play;
   int *recording;
-  int *streaming_set;
   int tcp_client_fd;
   int udp_rtp_server_fd;
   int udp_rtcp_server_fd;
@@ -69,6 +68,7 @@ struct stream_data {
   socklen_t udp_client_addr_size;
 };
 
+// HELPERS
 void get_date(char *time_buffer, size_t time_buffer_size) {
   time_t now = time(NULL);
   struct tm *local = localtime(&now);
@@ -84,6 +84,125 @@ void print_packet(int size, char *buffer) {
   printf("\n\n");
 }
 
+void get_method(char *buffer, int buffer_size, char *method) {
+  for (int x = 0; x < buffer_size; x++) {
+    if (buffer[x] == ' ') {
+      method[x] = '\0';
+      break;
+    }
+    method[x] = buffer[x];
+  }
+}
+
+char get_cseq(char *buffer) {}
+
+void get_sprop(char *sprop, char *buffer, int buffer_size) {
+  for (int x = 0; x < buffer_size; x++) {
+    if (buffer[x] == 'a' && buffer[x + 1] == '=' && buffer[x + 2] == 'f') {
+      for (int y = 0; buffer[x + y] != '\r'; y++) {
+        sprop[y] = buffer[x + y];
+      }
+      break;
+    }
+  }
+}
+
+int create_client_udp_fd(int port, struct sockaddr_in *udp_client_addr) {
+  printf("Creating client address for udp port:%d\n", port);
+
+  int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  struct sockaddr_in udp_client_addr_p = *udp_client_addr;
+
+  if (fd < 0) {
+    perror("Error creating socket");
+    return -1;
+  }
+
+  udp_client_addr->sin_family = AF_INET;
+  udp_client_addr->sin_port = htons(port);
+  udp_client_addr->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+  printf("Address: %s:%d\n\n", inet_ntoa(udp_client_addr->sin_addr),
+         ntohs(udp_client_addr->sin_port));
+  return fd;
+}
+
+// parses setup request to get udp client ports
+int get_udp_client_ports(char *buffer, int buffer_size, int *rtp_port,
+                         int *rtcp_port, char *rtp_port_char,
+                         char *rtcp_port_char) {
+
+  /*
+   * This is for a client connecting
+   SETUP rtsp://192.168.1.29:8081/streamid=0 RTSP/1.0
+   Transport: RTP/AVP/UDP;unicast;client_port=26836-26837
+   CSeq: 3
+   User-Agent: Lavf60.16.100
+  */
+
+  /*
+   * This is for a client streaming
+  SETUP rtsp://192.168.1.29:8081/streamid=0 RTSP/1.0
+  Transport: RTP/AVP/UDP;unicast;client_port=31940-31941;mode=record
+  CSeq: 3
+  User-Agent: Lavf61.7.100
+  Session: 12345678
+  */
+
+  int client_port_section_found = 0;
+  int rtp_port_found = 0;
+  int client_end_found = 0;
+  int semi_found = 0;
+
+  for (int x = 0; x < buffer_size; x++) {
+    if (buffer[x] == ';') {
+      semi_found += 1;
+    }
+
+    if (semi_found == 2) {
+      if (buffer[x] == '=') {
+        int z = 1;
+        int y = 0;
+        int a = 0;
+        while (z) {
+          if (buffer[x + y] == '=') {
+            y += 1;
+            continue;
+          }
+          if (buffer[x + y] == '-') {
+            z = 0;
+            break;
+          }
+          rtp_port_char[a] = buffer[x + y];
+          a += 1;
+          y += 1;
+        }
+        a = 0;
+        z = 1;
+        while (z) {
+          if (buffer[x + y] == '-') {
+            y += 1;
+            continue;
+          }
+          if (buffer[x + y] == ';' || buffer[x + y] == '\r') {
+            z = 0;
+            break;
+          }
+          rtcp_port_char[a] = buffer[x + y];
+          a += 1;
+          y += 1;
+        }
+        *rtcp_port = atoi(rtcp_port_char);
+        *rtp_port = atoi(rtp_port_char);
+        semi_found = 0;
+        return 0;
+      }
+    }
+  }
+  return 0;
+}
+
+// STREAM
 void *stream_protocol(void *data) {
   struct stream_data *sd = (struct stream_data *)data;
   int udp_server_fd = sd->udp_server_fd;
@@ -127,8 +246,7 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
             struct sockaddr_in *udp_rtp_client_addr,
             socklen_t udp_rtp_client_addr_size,
             struct sockaddr_in *udp_rtcp_client_addr,
-            socklen_t udp_rtcp_client_addr_size, int *recording,
-            int *streaming_set) {
+            socklen_t udp_rtcp_client_addr_size, int *recording) {
   pthread_t rtp_thread;
   pthread_t rtcp_thread;
   int threads_waiting = 1;
@@ -154,11 +272,11 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
       // this resets us allowing for other clients to connect on different ports
       *play = 0;
       *recording = 0;
-      *streaming_set = 1;
     }
   }
 }
 
+// RTSP METHODS
 void record(char *buffer, int client_fd, Handle_Request_Args *args) {
   printf("REQUEST:\n%s\n\n", buffer);
 
@@ -168,7 +286,6 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args) {
   int udp_rtcp_server_fd = args->udp_rtcp_server_fd;
   int *udp_rtp_client_fd = args->udp_rtp_client_fd;
   int *udp_rtcp_client_fd = args->udp_rtcp_client_fd;
-  int *streaming_set = args->streaming_set;
   struct sockaddr_in *udp_rtp_client_addr = args->udp_rtp_client_addr;
   struct sockaddr_in *udp_rtcp_client_addr = args->udp_rtcp_client_addr;
   socklen_t udp_rtp_client_addr_size = args->udp_rtp_client_addr_size;
@@ -194,8 +311,7 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args) {
 
   stream(play, udp_rtp_server_fd, udp_rtcp_server_fd, udp_rtp_client_fd,
          udp_rtcp_client_fd, udp_rtp_client_addr, udp_rtp_client_addr_size,
-         udp_rtcp_client_addr, udp_rtcp_client_addr_size, recording,
-         streaming_set);
+         udp_rtcp_client_addr, udp_rtcp_client_addr_size, recording);
 }
 
 void play(char *buffer, int client_fd, int *play) {
@@ -226,26 +342,6 @@ void announce(char *buffer, int client_fd) {
 
   printf("RESPONSE:\n%s\n\n", announce_response);
   send(client_fd, announce_response, strlen(announce_response), 0);
-}
-
-int create_client_udp_fd(int port, struct sockaddr_in *udp_client_addr) {
-  printf("Creating client address for udp port:%d\n", port);
-
-  int fd = socket(AF_INET, SOCK_DGRAM, 0);
-  struct sockaddr_in udp_client_addr_p = *udp_client_addr;
-
-  if (fd < 0) {
-    perror("Error creating socket");
-    return -1;
-  }
-
-  udp_client_addr->sin_family = AF_INET;
-  udp_client_addr->sin_port = htons(port);
-  udp_client_addr->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-
-  printf("Address: %s:%d\n\n", inet_ntoa(udp_client_addr->sin_addr),
-         ntohs(udp_client_addr->sin_port));
-  return fd;
 }
 
 // udp
@@ -354,102 +450,7 @@ void options(char *buffer, int client_fd) {
   send(client_fd, options_response, strlen(options_response), 0);
 }
 
-void get_method(char *buffer, int buffer_size, char *method) {
-  for (int x = 0; x < buffer_size; x++) {
-    if (buffer[x] == ' ') {
-      method[x] = '\0';
-      break;
-    }
-    method[x] = buffer[x];
-  }
-}
-
-// parses setup request to get udp client ports
-int get_udp_client_ports(char *buffer, int buffer_size, int *rtp_port,
-                         int *rtcp_port, char *rtp_port_char,
-                         char *rtcp_port_char) {
-
-  /*
-   * This is for a client connecting
-   SETUP rtsp://192.168.1.29:8081/streamid=0 RTSP/1.0
-   Transport: RTP/AVP/UDP;unicast;client_port=26836-26837
-   CSeq: 3
-   User-Agent: Lavf60.16.100
-  */
-
-  /*
-   * This is for a client streaming
-  SETUP rtsp://192.168.1.29:8081/streamid=0 RTSP/1.0
-  Transport: RTP/AVP/UDP;unicast;client_port=31940-31941;mode=record
-  CSeq: 3
-  User-Agent: Lavf61.7.100
-  Session: 12345678
-  */
-
-  int client_port_section_found = 0;
-  int rtp_port_found = 0;
-  int client_end_found = 0;
-  int semi_found = 0;
-
-  for (int x = 0; x < buffer_size; x++) {
-    if (buffer[x] == ';') {
-      semi_found += 1;
-    }
-
-    if (semi_found == 2) {
-      if (buffer[x] == '=') {
-        int z = 1;
-        int y = 0;
-        int a = 0;
-        while (z) {
-          if (buffer[x + y] == '=') {
-            y += 1;
-            continue;
-          }
-          if (buffer[x + y] == '-') {
-            z = 0;
-            break;
-          }
-          rtp_port_char[a] = buffer[x + y];
-          a += 1;
-          y += 1;
-        }
-        a = 0;
-        z = 1;
-        while (z) {
-          if (buffer[x + y] == '-') {
-            y += 1;
-            continue;
-          }
-          if (buffer[x + y] == ';' || buffer[x + y] == '\r') {
-            z = 0;
-            break;
-          }
-          rtcp_port_char[a] = buffer[x + y];
-          a += 1;
-          y += 1;
-        }
-        *rtcp_port = atoi(rtcp_port_char);
-        *rtp_port = atoi(rtp_port_char);
-        semi_found = 0;
-        return 0;
-      }
-    }
-  }
-  return 0;
-}
-
-void get_sprop(char *sprop, char *buffer, int buffer_size) {
-  for (int x = 0; x < buffer_size; x++) {
-    if (buffer[x] == 'a' && buffer[x + 1] == '=' && buffer[x + 2] == 'f') {
-      for (int y = 0; buffer[x + y] != '\r'; y++) {
-        sprop[y] = buffer[x + y];
-      }
-      break;
-    }
-  }
-}
-
+// RTSP ROUTER
 void *handle_requests(void *arg) {
   Handle_Request_Args *args = (Handle_Request_Args *)arg;
   int buffer_size = 0;
@@ -645,20 +646,19 @@ int main(int argc, char **argv) {
    * separate thread of execution for each
    */
 
+  int connections = 0;
+
   while (1) {
     printf("Getting connections...\n");
 
     for (int client_fd_index = 0; client_fd_index < max_clients;
          client_fd_index++) {
       if (tcp_client_fds[client_fd_index] == 0) {
-        printf("Connection file descriptor: %d\n",
-               tcp_client_fds[client_fd_index]);
-
-        if (streaming_set == 1) {
+        if (connections % 2 == 0) {
           // we probably shouldn't reset the server and client ip addresses that
           // are being used, we'll need an array of these or something we'll
           // come back to this
-          printf("STREAMING_SET\n\n");
+          // printf("STREAMING_SET\n\n");
           //
           // memset(&udp_rtp_client_addr, 0, sizeof(udp_rtp_client_addr));
           // memset(&udp_rtcp_client_addr, 0, sizeof(udp_rtcp_client_addr));
@@ -715,6 +715,8 @@ int main(int argc, char **argv) {
           // streaming_set = 0;
         }
 
+        printf("CONNECTIONS: %d\n\n", connections);
+
         // create pthread here no need to have pthreads in an array
         pthread_t thread;
 
@@ -747,9 +749,9 @@ int main(int argc, char **argv) {
         args.udp_rtcp_client_addr_size = udp_rtcp_client_addr_size;
         args.rtsp_relay_server_ip = rtsp_relay_server_ip;
         args.sdp = sdp;
-        args.streaming_set = &streaming_set;
 
         pthread_create(&thread, NULL, handle_requests, &args);
+        connections += 1;
       } else {
         printf("client already listening on file descriptor: %d\n",
                tcp_client_fds[client_fd_index]);
