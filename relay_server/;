@@ -71,18 +71,18 @@ typedef struct {
   int udp_rtcp_server_fd;
   int udp_rtp_client_fd;
   int udp_rtcp_client_fd;
-  int udp_rtp_port;
-  int udp_rtcp_port;
   struct sockaddr_in udp_rtp_client_addr;
   struct sockaddr_in tcp_rtsp_client_addr;
+  socklen_t udp_rtp_client_addr_size;
+  socklen_t tcp_rtsp_client_addr_size;
   struct sockaddr_in udp_rtcp_client_addr;
   struct sockaddr_in udp_rtp_server_addr;
   struct sockaddr_in udp_rtcp_server_addr;
-  socklen_t udp_rtp_client_addr_size;
-  socklen_t tcp_rtsp_client_addr_size;
   socklen_t udp_rtcp_client_addr_size;
   char rtsp_relay_server_ip;
   char sdp;
+  int udp_rtp_port;
+  int udp_rtcp_port;
 } RTSP_Session;
 
 struct stream_data {
@@ -233,13 +233,13 @@ int get_udp_client_ports(char *buffer, int buffer_size, int *rtp_port,
 // STREAM
 void *stream_protocol(void *data) {
   struct stream_data *sd = (struct stream_data *)data;
-  struct sockaddr_in udp_client_addr = sd->udp_client_addr;
-  struct sockaddr_in udp_sender_addr;
   int udp_server_fd = sd->udp_server_fd;
   int udp_client_fd = sd->udp_client_fd;
+  struct sockaddr_in udp_client_addr = sd->udp_client_addr;
+  socklen_t udp_client_addr_size = sd->udp_client_addr_size;
   int play_message_sent = 0;
   int bytes = 0;
-  socklen_t udp_client_addr_size = sd->udp_client_addr_size;
+  struct sockaddr_in udp_sender_addr;
   socklen_t udp_sender_addr_size = sizeof(udp_sender_addr);
   char buffer[STREAM_BUFFER_SIZE];
 
@@ -393,8 +393,8 @@ void setup(char *buffer, int rtp_port, int rtcp_port, char *rtp_port_char,
   struct sockaddr_in *udp_rtp_client_addr = args->udp_rtp_client_addr;
   struct sockaddr_in *udp_rtcp_client_address = args->udp_rtcp_client_addr;
   char setup_response[300];
-  char udp_rtp_port[5];
-  char udp_rtcp_port[5];
+  char udp_rtp_port[10];
+  char udp_rtcp_port[10];
 
   memset(setup_response, 0, sizeof(setup_response));
   memset(udp_rtp_port, 0, sizeof(udp_rtp_port));
