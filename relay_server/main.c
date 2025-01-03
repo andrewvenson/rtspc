@@ -141,8 +141,6 @@ void get_sprop(char *sprop, char *buffer, int buffer_size) {
 }
 
 int create_client_udp_fd(int port, struct sockaddr_in *udp_client_addr) {
-  printf("Creating client address for udp port:%d\n", port);
-
   int fd = socket(AF_INET, SOCK_DGRAM, 0);
   struct sockaddr_in udp_client_addr_p = *udp_client_addr;
 
@@ -300,6 +298,7 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
       // this resets us allowing for other clients to connect on different ports
       *play = 0;
       *recording = 0;
+      break;
     }
   }
 }
@@ -346,7 +345,7 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args,
 }
 
 void play(char *buffer, int client_fd, int *play, char *cseq) {
-  printf("REQUEST:\n%s\n\n", buffer);
+  printf("PLAY REQUEST:\n%s\n\n", buffer);
 
   char play_response[300];
   memset(play_response, 0, sizeof(play_response));
@@ -356,10 +355,9 @@ void play(char *buffer, int client_fd, int *play, char *cseq) {
   strcat(play_response, cseq);
   strcat(play_response, "\r\n");
   strcat(play_response, "Range: npt=0.000-\r\n");
-  strcat(play_response, "Content-Length: 0\r\n");
   strcat(play_response, "Session: 12345678\r\n\r\n");
 
-  printf("RESPONSE:\n%s\n\n", play_response);
+  printf("PLAY RESPONSE to client_fd %d:\n%s\n\n", client_fd, play_response);
   send(client_fd, play_response, strlen(play_response), 0);
 
   *play = 1;
@@ -500,7 +498,7 @@ void options(char *buffer, int client_fd, char *cseq) {
   strcat(options_response, "Public: OPTIONS, DESCRIBE, SETUP, PLAY, "
                            "PAUSE, RECORD, TEARDOWN, ANNOUNCE\r\n\r\n");
 
-  printf("RESPONSE:\n%s\n\n", options_response);
+  printf("RESPONSE to client_fd %d:\n%s\n\n", client_fd, options_response);
   send(client_fd, options_response, strlen(options_response), 0);
 }
 
@@ -508,15 +506,17 @@ void options(char *buffer, int client_fd, char *cseq) {
 void *handle_requests(void *arg) {
   Handle_Request_Args *args = (Handle_Request_Args *)arg;
   int buffer_size = 0;
-  char buffer[TCP_RTSP_BUFFER_SIZE];
-  memset(buffer, 0, sizeof(buffer));
-
   int rtp_port;
   int rtcp_port;
+  char buffer[TCP_RTSP_BUFFER_SIZE];
   char rtp_port_char[12];
   char rtcp_port_char[12];
+
+  memset(buffer, 0, sizeof(buffer));
   memset(rtp_port_char, 0, 12);
   memset(rtcp_port_char, 0, 12);
+
+  printf("TCP CLIENT FD: %d\n\n", args->tcp_client_fd);
 
   while (1) {
     if ((buffer_size = recv(args->tcp_client_fd, buffer,
@@ -718,8 +718,13 @@ int main(int argc, char **argv) {
         printf("CONNECTIONS: %d\n\n", connections);
         if (connections > 0 && connections % 2 == 0) {
           printf("STREAMING_SET\n\n");
+          memset(&sessions[client_fd_index].tcp_rtsp_client_addr, 0,
+                 sizeof(sessions[client_fd_index].tcp_rtsp_client_addr));
+
           sessions[client_fd_index].recording = 0;
           sessions[client_fd_index].play = 0;
+          sessions[client_fd_index].tcp_rtsp_client_addr_size =
+              sizeof(sessions[client_fd_index].tcp_rtsp_client_addr);
 
           sessions[client_fd_index].udp_rtp_server_fd =
               socket(AF_INET, SOCK_DGRAM, 0);
@@ -737,9 +742,6 @@ int main(int argc, char **argv) {
 
           memset(&sessions[client_fd_index].udp_rtp_server_addr, 0,
                  sizeof(sessions[client_fd_index].udp_rtp_server_addr));
-          memset(&sessions[client_fd_index].udp_rtcp_server_addr, 0,
-                 sizeof(sessions[client_fd_index].udp_rtcp_server_addr));
-
           sessions[client_fd_index].udp_rtp_server_addr.sin_family = AF_INET;
           sessions[client_fd_index].udp_rtp_server_addr.sin_addr.s_addr =
               INADDR_ANY;
@@ -747,6 +749,8 @@ int main(int argc, char **argv) {
               htons(UDP_PORT + client_fd_index);
           sessions[client_fd_index].udp_rtp_port = UDP_PORT + client_fd_index;
 
+          memset(&sessions[client_fd_index].udp_rtcp_server_addr, 0,
+                 sizeof(sessions[client_fd_index].udp_rtcp_server_addr));
           sessions[client_fd_index].udp_rtcp_server_addr.sin_family = AF_INET;
           sessions[client_fd_index].udp_rtcp_server_addr.sin_addr.s_addr =
               INADDR_ANY;
@@ -805,18 +809,22 @@ int main(int argc, char **argv) {
         args.tcp_client_fd = tcp_client_fds[client_fd_index];
         args.play = &sessions[session_index].play;
         args.recording = &sessions[session_index].recording;
+
+        args.rtsp_relay_server_ip = rtsp_relay_server_ip;
         args.udp_rtp_server_fd = sessions[session_index].udp_rtp_server_fd;
+        args.udp_rtcp_server_fd = sessions[session_index].udp_rtcp_server_fd;
+
         args.udp_rtp_client_fd = &sessions[session_index].udp_rtp_client_fd;
         args.udp_rtp_client_addr = &sessions[session_index].udp_rtp_client_addr;
         args.udp_rtp_client_addr_size =
             sessions[session_index].udp_rtp_client_addr_size;
-        args.udp_rtcp_server_fd = sessions[session_index].udp_rtcp_server_fd;
+
         args.udp_rtcp_client_fd = &sessions[session_index].udp_rtcp_client_fd;
         args.udp_rtcp_client_addr =
             &sessions[session_index].udp_rtcp_client_addr;
         args.udp_rtcp_client_addr_size =
             sessions[session_index].udp_rtcp_client_addr_size;
-        args.rtsp_relay_server_ip = rtsp_relay_server_ip;
+
         args.sdp = &sessions[session_index].sdp;
         args.udp_rtp_port = sessions[session_index].udp_rtp_port;
         args.udp_rtcp_port = sessions[session_index].udp_rtcp_port;
