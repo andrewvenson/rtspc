@@ -94,7 +94,16 @@ void get_method(char *buffer, int buffer_size, char *method) {
   }
 }
 
-char get_cseq(char *buffer) {}
+void get_cseq(char *buffer, int buffer_size, char *cseq) {
+  for (int x = 0; x < buffer_size; x++) {
+    if (x + 6 < buffer_size) {
+      if (buffer[x] == 'C' && buffer[x + 1] == 'S' && buffer[x + 2] == 'e' &&
+          buffer[x + 3] == 'q') {
+        cseq[0] = buffer[x + 6];
+      }
+    }
+  }
+}
 
 void get_sprop(char *sprop, char *buffer, int buffer_size) {
   for (int x = 0; x < buffer_size; x++) {
@@ -136,17 +145,12 @@ int get_udp_client_ports(char *buffer, int buffer_size, int *rtp_port,
    * This is for a client connecting
    SETUP rtsp://192.168.1.29:8081/streamid=0 RTSP/1.0
    Transport: RTP/AVP/UDP;unicast;client_port=26836-26837
-   CSeq: 3
-   User-Agent: Lavf60.16.100
   */
 
   /*
    * This is for a client streaming
   SETUP rtsp://192.168.1.29:8081/streamid=0 RTSP/1.0
   Transport: RTP/AVP/UDP;unicast;client_port=31940-31941;mode=record
-  CSeq: 3
-  User-Agent: Lavf61.7.100
-  Session: 12345678
   */
 
   int client_port_section_found = 0;
@@ -277,7 +281,8 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
 }
 
 // RTSP METHODS
-void record(char *buffer, int client_fd, Handle_Request_Args *args) {
+void record(char *buffer, int client_fd, Handle_Request_Args *args,
+            char *cseq) {
   printf("REQUEST:\n%s\n\n", buffer);
 
   int *play = args->play;
@@ -299,7 +304,9 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args) {
   memset(record_response, 0, sizeof(record_response));
 
   strcat(record_response, "RTSP/1.0 200 OK\r\n");
-  strcat(record_response, "CSeq: 4\r\n");
+  strcat(record_response, "CSeq: ");
+  strcat(record_response, cseq);
+  strcat(record_response, "\r\n");
   strcat(record_response, "Session: 12345678\r\n");
   get_date(time_buffer, sizeof(time_buffer));
   strcat(record_response, time_buffer);
@@ -314,14 +321,16 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args) {
          udp_rtcp_client_addr, udp_rtcp_client_addr_size, recording);
 }
 
-void play(char *buffer, int client_fd, int *play) {
+void play(char *buffer, int client_fd, int *play, char *cseq) {
   printf("REQUEST:\n%s\n\n", buffer);
 
   char play_response[300];
   memset(play_response, 0, sizeof(play_response));
 
   strcat(play_response, "RTSP/1.0 200 OK\r\n");
-  strcat(play_response, "CSeq: 4\r\n");
+  strcat(play_response, "CSeq: ");
+  strcat(play_response, cseq);
+  strcat(play_response, "\r\n");
   strcat(play_response, "Range: npt=0.000-\r\n");
   strcat(play_response, "Content-Length: 0\r\n");
   strcat(play_response, "Session: 12345678\r\n\r\n");
@@ -332,13 +341,17 @@ void play(char *buffer, int client_fd, int *play) {
   *play = 1;
 }
 
-void announce(char *buffer, int client_fd) {
+void announce(char *buffer, int client_fd, char *cseq) {
   printf("REQUEST:\n%s\n\n", buffer);
 
-  char announce_response[] = "RTSP/1.0 200 OK\r\n"
-                             "CSeq: 2\r\n"
-                             "Session: 12345678\r\n"
-                             "\r\n";
+  char announce_response[100];
+  memset(announce_response, 0, sizeof(announce_response));
+
+  strcat(announce_response, "RTSP/1.0 200 OK\r\n");
+  strcat(announce_response, "CSeq: ");
+  strcat(announce_response, cseq);
+  strcat(announce_response, "\r\n");
+  strcat(announce_response, "Session: 12345678\r\n\r\n");
 
   printf("RESPONSE:\n%s\n\n", announce_response);
   send(client_fd, announce_response, strlen(announce_response), 0);
@@ -346,7 +359,7 @@ void announce(char *buffer, int client_fd) {
 
 // udp
 void setup(char *buffer, int rtp_port, int rtcp_port, char *rtp_port_char,
-           char *rtcp_port_char, Handle_Request_Args *args) {
+           char *rtcp_port_char, Handle_Request_Args *args, char *cseq) {
   printf("REQUEST:\n%s\n\n", buffer);
 
   int tcp_client_fd = args->tcp_client_fd;
@@ -359,7 +372,9 @@ void setup(char *buffer, int rtp_port, int rtcp_port, char *rtp_port_char,
   memset(setup_response, 0, sizeof(setup_response));
 
   strcat(setup_response, "RTSP/1.0 200 OK\r\n");
-  strcat(setup_response, "CSeq: 3\r\n");
+  strcat(setup_response, "CSeq: ");
+  strcat(setup_response, cseq);
+  strcat(setup_response, "\r\n");
   strcat(setup_response, "Transport: RTP/AVP/UDP;unicast;client_port=");
   strcat(setup_response, rtp_port_char);
   strcat(setup_response, "-");
@@ -378,7 +393,7 @@ void setup(char *buffer, int rtp_port, int rtcp_port, char *rtp_port_char,
   send(tcp_client_fd, setup_response, strlen(setup_response), 0);
 }
 
-void describe(char *buffer, Handle_Request_Args *args) {
+void describe(char *buffer, Handle_Request_Args *args, char *cseq) {
   printf("REQUEST:\n%s\n\n", buffer);
 
   int tcp_client_fd = args->tcp_client_fd;
@@ -398,7 +413,9 @@ void describe(char *buffer, Handle_Request_Args *args) {
   snprintf(port, sizeof(port), "%d", PORT);
 
   strcat(describe_response, "RTSP/1.0 200 OK\r\n");
-  strcat(describe_response, "CSeq: 2\r\n");
+  strcat(describe_response, "CSeq: ");
+  strcat(describe_response, cseq);
+  strcat(describe_response, "\r\n");
   strcat(describe_response, "Content-Base: rtsp://");
   strcat(describe_response, rtsp_relay_server_ip);
   strcat(describe_response, ":");
@@ -421,28 +438,30 @@ void describe(char *buffer, Handle_Request_Args *args) {
     strcat(describe_content, sdp);
     strcat(describe_content, "\r\n");
     strcat(describe_content, "a=control:streamid=0\r\n");
+
+    snprintf(content_length, sizeof(content_length), "%lu",
+             strlen(describe_content));
+
+    strcat(describe_response, "Content-Length: ");
+    strcat(describe_response, content_length);
+    strcat(describe_response, "\r\n\r\n");
+    strcat(describe_response, describe_content);
   }
-
-  snprintf(content_length, sizeof(content_length), "%lu",
-           strlen(describe_content));
-
-  strcat(describe_response, "Content-Length: ");
-  strcat(describe_response, content_length);
-  strcat(describe_response, "\r\n\r\n");
-  strcat(describe_response, describe_content);
 
   printf("RESPONSE:\n%s\n\n", describe_response);
   send(tcp_client_fd, describe_response, strlen(describe_response), 0);
 }
 
-void options(char *buffer, int client_fd) {
+void options(char *buffer, int client_fd, char *cseq) {
   printf("REQUEST:\n%s\n\n", buffer);
 
   char options_response[100];
   memset(options_response, 0, sizeof(options_response));
 
   strcat(options_response, "RTSP/1.0 200 OK\r\n");
-  strcat(options_response, "CSeq: 1\r\n");
+  strcat(options_response, "CSeq: ");
+  strcat(options_response, cseq);
+  strcat(options_response, "\r\n");
   strcat(options_response, "Public: OPTIONS, DESCRIBE, SETUP, PLAY, "
                            "PAUSE, RECORD, TEARDOWN, ANNOUNCE\r\n\r\n");
 
@@ -473,25 +492,32 @@ void *handle_requests(void *arg) {
 
       get_method(buffer, buffer_size, method);
 
+      char cseq[2];
+      memset(cseq, 0, sizeof(cseq));
+
       // dynamically adding sprop from rtsp client
       if (buffer[0] == 'v' && buffer[1] == '=') {
         get_sprop(args->sdp, buffer, buffer_size);
+      } else {
+        get_cseq(buffer, buffer_size, cseq);
+        cseq[1] = '\0';
       }
 
       if (strcmp(method, "OPTIONS") == 0) {
-        options(buffer, args->tcp_client_fd);
+        options(buffer, args->tcp_client_fd, cseq);
       } else if (strcmp(method, "DESCRIBE") == 0) {
-        describe(buffer, args);
+        describe(buffer, args, cseq);
       } else if (strcmp(method, "SETUP") == 0) {
         get_udp_client_ports(buffer, buffer_size, &rtp_port, &rtcp_port,
                              rtp_port_char, rtcp_port_char);
-        setup(buffer, rtp_port, rtcp_port, rtp_port_char, rtcp_port_char, args);
+        setup(buffer, rtp_port, rtcp_port, rtp_port_char, rtcp_port_char, args,
+              cseq);
       } else if (strcmp(method, "ANNOUNCE") == 0) {
-        announce(buffer, args->tcp_client_fd);
+        announce(buffer, args->tcp_client_fd, cseq);
       } else if (strcmp(method, "RECORD") == 0) {
-        record(buffer, args->tcp_client_fd, args);
+        record(buffer, args->tcp_client_fd, args, cseq);
       } else if (strcmp(method, "PLAY") == 0) {
-        play(buffer, args->tcp_client_fd, args->play);
+        play(buffer, args->tcp_client_fd, args->play, cseq);
       }
     }
     memset(buffer, 0, sizeof(buffer));
@@ -654,11 +680,11 @@ int main(int argc, char **argv) {
     for (int client_fd_index = 0; client_fd_index < max_clients;
          client_fd_index++) {
       if (tcp_client_fds[client_fd_index] == 0) {
-        if (connections % 2 == 0) {
+        if (connections > 0 && connections % 2 == 0) {
           // we probably shouldn't reset the server and client ip addresses that
           // are being used, we'll need an array of these or something we'll
           // come back to this
-          // printf("STREAMING_SET\n\n");
+          printf("STREAMING_SET\n\n");
           //
           // memset(&udp_rtp_client_addr, 0, sizeof(udp_rtp_client_addr));
           // memset(&udp_rtcp_client_addr, 0, sizeof(udp_rtcp_client_addr));
