@@ -129,7 +129,6 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
             struct sockaddr_in *udp_rtcp_client_addr,
             socklen_t udp_rtcp_client_addr_size, int *recording,
             int *streaming_set) {
-
   pthread_t rtp_thread;
   pthread_t rtcp_thread;
   int threads_waiting = 1;
@@ -161,7 +160,8 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
 }
 
 void record(char *buffer, int client_fd, Handle_Request_Args *args) {
-  printf("%s\n\n", buffer);
+  printf("REQUEST:\n%s\n\n", buffer);
+
   int *play = args->play;
   int *recording = args->recording;
   int udp_rtp_server_fd = args->udp_rtp_server_fd;
@@ -188,7 +188,7 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args) {
   strcat(record_response, time_buffer);
   strcat(record_response, "\r\n\r\n");
 
-  printf("%s\n\n", record_response);
+  printf("RESPONSE:\n%s\n\n", record_response);
   send(client_fd, record_response, strlen(record_response), 0);
   *recording = 1;
 
@@ -199,7 +199,7 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args) {
 }
 
 void play(char *buffer, int client_fd, int *play) {
-  printf("%s\n\n", buffer);
+  printf("REQUEST:\n%s\n\n", buffer);
 
   char play_response[300];
   memset(play_response, 0, sizeof(play_response));
@@ -210,21 +210,21 @@ void play(char *buffer, int client_fd, int *play) {
   strcat(play_response, "Content-Length: 0\r\n");
   strcat(play_response, "Session: 12345678\r\n\r\n");
 
-  printf("%s\n\n", play_response);
+  printf("RESPONSE:\n%s\n\n", play_response);
   send(client_fd, play_response, strlen(play_response), 0);
 
   *play = 1;
 }
 
 void announce(char *buffer, int client_fd) {
-  printf("%s\n\n", buffer);
+  printf("REQUEST:\n%s\n\n", buffer);
 
   char announce_response[] = "RTSP/1.0 200 OK\r\n"
                              "CSeq: 2\r\n"
                              "Session: 12345678\r\n"
                              "\r\n";
 
-  printf("%s\n\n", announce_response);
+  printf("RESPONSE:\n%s\n\n", announce_response);
   send(client_fd, announce_response, strlen(announce_response), 0);
 }
 
@@ -251,7 +251,7 @@ int create_client_udp_fd(int port, struct sockaddr_in *udp_client_addr) {
 // udp
 void setup(char *buffer, int rtp_port, int rtcp_port, char *rtp_port_char,
            char *rtcp_port_char, Handle_Request_Args *args) {
-  printf("%s\n\n", buffer);
+  printf("REQUEST:\n%s\n\n", buffer);
 
   int tcp_client_fd = args->tcp_client_fd;
   int *recording = args->recording;
@@ -278,12 +278,12 @@ void setup(char *buffer, int rtp_port, int rtcp_port, char *rtp_port_char,
         create_client_udp_fd(rtcp_port, udp_rtcp_client_address);
   }
 
-  printf("%s\n\n", setup_response);
+  printf("RESPONSE:\n%s\n\n", setup_response);
   send(tcp_client_fd, setup_response, strlen(setup_response), 0);
 }
 
 void describe(char *buffer, Handle_Request_Args *args) {
-  printf("%s\n\n", buffer);
+  printf("REQUEST:\n%s\n\n", buffer);
 
   int tcp_client_fd = args->tcp_client_fd;
   int *recording = args->recording;
@@ -335,12 +335,12 @@ void describe(char *buffer, Handle_Request_Args *args) {
   strcat(describe_response, "\r\n\r\n");
   strcat(describe_response, describe_content);
 
-  printf("Sending DESCRIBE: %s\n\n", describe_response);
+  printf("RESPONSE:\n%s\n\n", describe_response);
   send(tcp_client_fd, describe_response, strlen(describe_response), 0);
 }
 
 void options(char *buffer, int client_fd) {
-  printf("%s\n\n", buffer);
+  printf("REQUEST:\n%s\n\n", buffer);
 
   char options_response[100];
   memset(options_response, 0, sizeof(options_response));
@@ -350,7 +350,7 @@ void options(char *buffer, int client_fd) {
   strcat(options_response, "Public: OPTIONS, DESCRIBE, SETUP, PLAY, "
                            "PAUSE, RECORD, TEARDOWN, ANNOUNCE\r\n\r\n");
 
-  printf("%s\n\n", options_response);
+  printf("RESPONSE:\n%s\n\n", options_response);
   send(client_fd, options_response, strlen(options_response), 0);
 }
 
@@ -398,7 +398,6 @@ int get_udp_client_ports(char *buffer, int buffer_size, int *rtp_port,
 
     if (semi_found == 2) {
       if (buffer[x] == '=') {
-        printf("%s\n", &buffer[x + 1]);
         int z = 1;
         int y = 0;
         int a = 0;
@@ -473,6 +472,7 @@ void *handle_requests(void *arg) {
 
       get_method(buffer, buffer_size, method);
 
+      // dynamically adding sprop from rtsp client
       if (buffer[0] == 'v' && buffer[1] == '=') {
         get_sprop(args->sdp, buffer, buffer_size);
       }
@@ -535,7 +535,7 @@ int main(int argc, char **argv) {
   struct sockaddr_in udp_rtcp_client_addr;
 
   memset(&tcp_rtsp_server_addr, 0, sizeof(tcp_rtsp_server_addr));
-  memset(&tcp_rtsp_server_addr, 0, sizeof(tcp_rtsp_server_addr));
+  memset(&tcp_rtsp_client_addr, 0, sizeof(tcp_rtsp_client_addr));
   memset(&udp_rtp_client_addr, 0, sizeof(udp_rtp_client_addr));
   memset(&udp_rtcp_client_addr, 0, sizeof(udp_rtcp_client_addr));
   memset(&udp_rtp_server_addr, 0, sizeof(udp_rtp_server_addr));
@@ -569,6 +569,8 @@ int main(int argc, char **argv) {
                  sizeof(opt)) < 0) {
     perror("Error setting socket options");
     close(tcp_rtsp_server_fd);
+    close(udp_rtp_client_fd);
+    close(udp_rtcp_client_fd);
     close(udp_rtp_server_fd);
     close(udp_rtcp_server_fd);
     return -1;
@@ -593,6 +595,8 @@ int main(int argc, char **argv) {
            sizeof(udp_rtp_server_addr)) < 0) {
     perror("Error binding socket to udp server address");
     close(tcp_rtsp_server_fd);
+    close(udp_rtp_client_fd);
+    close(udp_rtcp_client_fd);
     close(udp_rtp_server_fd);
     close(udp_rtcp_server_fd);
     return -1;
@@ -602,6 +606,8 @@ int main(int argc, char **argv) {
            sizeof(udp_rtcp_server_addr)) < 0) {
     perror("Error binding socket to control port address");
     close(tcp_rtsp_server_fd);
+    close(udp_rtp_client_fd);
+    close(udp_rtcp_client_fd);
     close(udp_rtp_server_fd);
     close(udp_rtcp_server_fd);
     return -1;
@@ -611,6 +617,8 @@ int main(int argc, char **argv) {
            sizeof(tcp_rtsp_server_addr)) < 0) {
     perror("Error binding socket to server address");
     close(tcp_rtsp_server_fd);
+    close(udp_rtp_client_fd);
+    close(udp_rtcp_client_fd);
     close(udp_rtp_server_fd);
     close(udp_rtcp_server_fd);
     return -1;
@@ -619,6 +627,8 @@ int main(int argc, char **argv) {
   if (listen(tcp_rtsp_server_fd, max_clients) < 0) {
     perror("Error listening for server connections");
     close(tcp_rtsp_server_fd);
+    close(udp_rtp_client_fd);
+    close(udp_rtcp_client_fd);
     close(udp_rtp_server_fd);
     close(udp_rtcp_server_fd);
     return -1;
@@ -648,53 +658,61 @@ int main(int argc, char **argv) {
           // we probably shouldn't reset the server and client ip addresses that
           // are being used, we'll need an array of these or something we'll
           // come back to this
-
-          memset(&udp_rtp_client_addr, 0, sizeof(udp_rtp_client_addr));
-          memset(&udp_rtcp_client_addr, 0, sizeof(udp_rtcp_client_addr));
-          memset(&udp_rtp_server_addr, 0, sizeof(udp_rtp_server_addr));
-          memset(&udp_rtcp_server_addr, 0, sizeof(udp_rtcp_server_addr));
-
-          udp_rtp_server_fd = socket(AF_INET, SOCK_DGRAM, 0);
-          if (udp_rtp_server_fd < 0) {
-            perror("Error creating socket");
-            return -1;
-          }
-
-          udp_rtcp_server_fd = socket(AF_INET, SOCK_DGRAM, 0);
-          if (udp_rtcp_server_fd < 0) {
-            perror("Error creating socket");
-            return -1;
-          }
-
-          memset(&udp_rtp_server_addr, 0, sizeof(udp_rtp_server_addr));
-          udp_rtp_server_addr.sin_family = AF_INET;
-          udp_rtp_server_addr.sin_addr.s_addr = INADDR_ANY;
-          udp_rtp_server_addr.sin_port = htons(UDP_PORT + client_fd_index);
-
-          memset(&udp_rtcp_server_addr, 0, sizeof(udp_rtcp_server_addr));
-          udp_rtcp_server_addr.sin_family = AF_INET;
-          udp_rtcp_server_addr.sin_addr.s_addr = INADDR_ANY;
-          udp_rtcp_server_addr.sin_port =
-              htons(UDP_RTCP_PORT + client_fd_index);
-
-          if (bind(udp_rtp_server_fd, (struct sockaddr *)&udp_rtp_server_addr,
-                   sizeof(udp_rtp_server_addr)) < 0) {
-            perror("Error binding socket to udp server address");
-            close(tcp_rtsp_server_fd);
-            close(udp_rtp_server_fd);
-            close(udp_rtcp_server_fd);
-            return -1;
-          }
-
-          if (bind(udp_rtcp_server_fd, (struct sockaddr *)&udp_rtcp_server_addr,
-                   sizeof(udp_rtcp_server_addr)) < 0) {
-            perror("Error binding socket to control port address");
-            close(tcp_rtsp_server_fd);
-            close(udp_rtp_server_fd);
-            close(udp_rtcp_server_fd);
-            return -1;
-          }
-          streaming_set = 0;
+          printf("STREAMING_SET\n\n");
+          //
+          // memset(&udp_rtp_client_addr, 0, sizeof(udp_rtp_client_addr));
+          // memset(&udp_rtcp_client_addr, 0, sizeof(udp_rtcp_client_addr));
+          // memset(&udp_rtp_server_addr, 0, sizeof(udp_rtp_server_addr));
+          // memset(&udp_rtcp_server_addr, 0, sizeof(udp_rtcp_server_addr));
+          //
+          // udp_rtp_server_fd = socket(AF_INET, SOCK_DGRAM, 0);
+          // if (udp_rtp_server_fd < 0) {
+          //   perror("Error creating socket");
+          //   return -1;
+          // }
+          //
+          // udp_rtcp_server_fd = socket(AF_INET, SOCK_DGRAM, 0);
+          // if (udp_rtcp_server_fd < 0) {
+          //   perror("Error creating socket");
+          //   return -1;
+          // }
+          //
+          // memset(&udp_rtp_server_addr, 0, sizeof(udp_rtp_server_addr));
+          // udp_rtp_server_addr.sin_family = AF_INET;
+          // udp_rtp_server_addr.sin_addr.s_addr = INADDR_ANY;
+          // udp_rtp_server_addr.sin_port = htons(UDP_PORT + client_fd_index);
+          //
+          // memset(&udp_rtcp_server_addr, 0, sizeof(udp_rtcp_server_addr));
+          // udp_rtcp_server_addr.sin_family = AF_INET;
+          // udp_rtcp_server_addr.sin_addr.s_addr = INADDR_ANY;
+          // udp_rtcp_server_addr.sin_port =
+          //     htons(UDP_RTCP_PORT + client_fd_index);
+          //
+          // if (bind(udp_rtp_server_fd, (struct sockaddr
+          // *)&udp_rtp_server_addr,
+          //          sizeof(udp_rtp_server_addr)) < 0) {
+          //   perror("Error binding socket to udp server address");
+          //   close(tcp_rtsp_server_fd);
+          //   close(udp_rtp_client_fd);
+          //   close(udp_rtcp_client_fd);
+          //   close(udp_rtp_server_fd);
+          //   close(udp_rtcp_server_fd);
+          //   return -1;
+          // }
+          //
+          // if (bind(udp_rtcp_server_fd, (struct sockaddr
+          // *)&udp_rtcp_server_addr,
+          //          sizeof(udp_rtcp_server_addr)) < 0) {
+          //   perror("Error binding socket to control port address");
+          //   close(tcp_rtsp_server_fd);
+          //   close(udp_rtp_client_fd);
+          //   close(udp_rtcp_client_fd);
+          //   close(udp_rtp_server_fd);
+          //   close(udp_rtcp_server_fd);
+          //   return -1;
+          // }
+          //
+          // streaming_set = 0;
         }
 
         // create pthread here no need to have pthreads in an array
