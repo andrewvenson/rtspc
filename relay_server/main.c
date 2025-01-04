@@ -82,7 +82,7 @@ typedef struct {
   socklen_t tcp_rtsp_client_addr_size;
   socklen_t udp_rtcp_client_addr_size;
   char rtsp_relay_server_ip;
-  char sdp;
+  char sdp[300];
 } RTSP_Session;
 
 struct stream_data {
@@ -90,6 +90,7 @@ struct stream_data {
   int udp_client_fd;
   struct sockaddr_in udp_client_addr;
   socklen_t udp_client_addr_size;
+  int client_fd;
 };
 
 // HELPERS
@@ -130,11 +131,15 @@ void get_cseq(char *buffer, int buffer_size, char *cseq) {
 }
 
 void get_sprop(char *sprop, char *buffer, int buffer_size) {
+  printf("getting sdp\n");
+  int z = 0;
   for (int x = 0; x < buffer_size; x++) {
     if (buffer[x] == 'a' && buffer[x + 1] == '=' && buffer[x + 2] == 'f') {
       for (int y = 0; buffer[x + y] != '\r'; y++) {
+        z = y;
         sprop[y] = buffer[x + y];
       }
+      sprop[z + 1] = '\0';
       break;
     }
   }
@@ -250,7 +255,8 @@ void *stream_protocol(void *data) {
       play_message_sent = 1;
     }
 
-    // printf("Sending on PORT: %d\n\n", ntohs(udp_client_addr.sin_port));
+    // printf("DATA on CLIENT_FD: %d\n\n", sd->client_fd);
+    //  printf("Sending on PORT: %d\n\n", ntohs(udp_client_addr.sin_port));
 
     bytes =
         recvfrom(udp_server_fd, buffer, STREAM_BUFFER_SIZE, 0,
@@ -272,7 +278,8 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
             struct sockaddr_in *udp_rtp_client_addr,
             socklen_t udp_rtp_client_addr_size,
             struct sockaddr_in *udp_rtcp_client_addr,
-            socklen_t udp_rtcp_client_addr_size, int *recording) {
+            socklen_t udp_rtcp_client_addr_size, int *recording,
+            int client_fd) {
   pthread_t rtp_thread;
   pthread_t rtcp_thread;
   int threads_waiting = 1;
@@ -285,12 +292,14 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
       rtp_data.udp_client_fd = *udp_rtp_client_fd;
       rtp_data.udp_client_addr = *udp_rtp_client_addr;
       rtp_data.udp_client_addr_size = udp_rtp_client_addr_size;
+      rtp_data.client_fd = client_fd;
 
       struct stream_data rtcp_data;
       rtcp_data.udp_server_fd = udp_rtcp_server_fd;
       rtcp_data.udp_client_fd = *udp_rtcp_client_fd;
       rtcp_data.udp_client_addr = *udp_rtcp_client_addr;
       rtcp_data.udp_client_addr_size = udp_rtcp_client_addr_size;
+      rtcp_data.client_fd = client_fd;
 
       pthread_create(&rtp_thread, NULL, stream_protocol, &rtp_data);
       pthread_create(&rtcp_thread, NULL, stream_protocol, &rtcp_data);
@@ -298,7 +307,6 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
       // this resets us allowing for other clients to connect on different ports
       *play = 0;
       *recording = 0;
-      break;
     }
   }
 }
@@ -341,7 +349,7 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args,
 
   stream(play, udp_rtp_server_fd, udp_rtcp_server_fd, udp_rtp_client_fd,
          udp_rtcp_client_fd, udp_rtp_client_addr, udp_rtp_client_addr_size,
-         udp_rtcp_client_addr, udp_rtcp_client_addr_size, recording);
+         udp_rtcp_client_addr, udp_rtcp_client_addr_size, recording, client_fd);
 }
 
 void play(char *buffer, int client_fd, int *play, char *cseq) {
@@ -825,7 +833,7 @@ int main(int argc, char **argv) {
         args.udp_rtcp_client_addr_size =
             sessions[session_index].udp_rtcp_client_addr_size;
 
-        args.sdp = &sessions[session_index].sdp;
+        args.sdp = sessions[session_index].sdp;
         args.udp_rtp_port = sessions[session_index].udp_rtp_port;
         args.udp_rtcp_port = sessions[session_index].udp_rtcp_port;
 
