@@ -585,6 +585,8 @@ int main(int argc, char **argv) {
 
   int tcp_client_fds[max_clients] = {0};
   RTSP_Session sessions[max_clients];
+  Handle_Request_Args args[max_clients];
+  memset(args, 0, sizeof(args));
 
   sessions[0].recording = 0;
   sessions[0].play = 0;
@@ -811,34 +813,38 @@ int main(int argc, char **argv) {
         printf("Accepted Connection on file descriptor: %d\n",
                tcp_client_fds[client_fd_index]);
 
-        Handle_Request_Args args;
-        memset(&args, 0, sizeof(args));
+        args[client_fd_index].tcp_client_fd = tcp_client_fds[client_fd_index];
+        args[client_fd_index].play = &sessions[session_index].play;
+        args[client_fd_index].recording = &sessions[session_index].recording;
 
-        args.tcp_client_fd = tcp_client_fds[client_fd_index];
-        args.play = &sessions[session_index].play;
-        args.recording = &sessions[session_index].recording;
+        args[client_fd_index].rtsp_relay_server_ip = rtsp_relay_server_ip;
+        args[client_fd_index].udp_rtp_server_fd =
+            sessions[session_index].udp_rtp_server_fd;
+        args[client_fd_index].udp_rtcp_server_fd =
+            sessions[session_index].udp_rtcp_server_fd;
 
-        args.rtsp_relay_server_ip = rtsp_relay_server_ip;
-        args.udp_rtp_server_fd = sessions[session_index].udp_rtp_server_fd;
-        args.udp_rtcp_server_fd = sessions[session_index].udp_rtcp_server_fd;
-
-        args.udp_rtp_client_fd = &sessions[session_index].udp_rtp_client_fd;
-        args.udp_rtp_client_addr = &sessions[session_index].udp_rtp_client_addr;
-        args.udp_rtp_client_addr_size =
+        args[client_fd_index].udp_rtp_client_fd =
+            &sessions[session_index].udp_rtp_client_fd;
+        args[client_fd_index].udp_rtp_client_addr =
+            &sessions[session_index].udp_rtp_client_addr;
+        args[client_fd_index].udp_rtp_client_addr_size =
             sessions[session_index].udp_rtp_client_addr_size;
 
-        args.udp_rtcp_client_fd = &sessions[session_index].udp_rtcp_client_fd;
-        args.udp_rtcp_client_addr =
+        args[client_fd_index].udp_rtcp_client_fd =
+            &sessions[session_index].udp_rtcp_client_fd;
+        args[client_fd_index].udp_rtcp_client_addr =
             &sessions[session_index].udp_rtcp_client_addr;
-        args.udp_rtcp_client_addr_size =
+        args[client_fd_index].udp_rtcp_client_addr_size =
             sessions[session_index].udp_rtcp_client_addr_size;
 
-        args.sdp = sessions[session_index].sdp;
-        args.udp_rtp_port = sessions[session_index].udp_rtp_port;
-        args.udp_rtcp_port = sessions[session_index].udp_rtcp_port;
+        args[client_fd_index].sdp = sessions[session_index].sdp;
+        args[client_fd_index].udp_rtp_port =
+            sessions[session_index].udp_rtp_port;
+        args[client_fd_index].udp_rtcp_port =
+            sessions[session_index].udp_rtcp_port;
 
         pthread_t thread;
-        pthread_create(&thread, NULL, handle_requests, &args);
+        pthread_create(&thread, NULL, handle_requests, &args[client_fd_index]);
       } else {
         printf("client already listening on file descriptor: %d\n",
                tcp_client_fds[client_fd_index]);
