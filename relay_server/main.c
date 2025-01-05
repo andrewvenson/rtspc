@@ -119,6 +119,7 @@ void get_method(char *buffer, int buffer_size, char *method) {
   }
 }
 
+// TODO need to support double/triple/etc digit numbers
 void get_cseq(char *buffer, int buffer_size, char *cseq) {
   for (int x = 0; x < buffer_size; x++) {
     if (x + 6 < buffer_size) {
@@ -730,6 +731,14 @@ int main(int argc, char **argv) {
           printf("STREAMING_SET\n\n");
           memset(&sessions[client_fd_index].tcp_rtsp_client_addr, 0,
                  sizeof(sessions[client_fd_index].tcp_rtsp_client_addr));
+          memset(&sessions[client_fd_index].udp_rtp_server_addr, 0,
+                 sizeof(sessions[client_fd_index].udp_rtp_server_addr));
+          memset(&sessions[client_fd_index].udp_rtcp_server_addr, 0,
+                 sizeof(sessions[client_fd_index].udp_rtcp_server_addr));
+          memset(&sessions[client_fd_index].udp_rtcp_client_addr, 0,
+                 sizeof(sessions[client_fd_index].udp_rtcp_client_addr));
+          memset(&sessions[client_fd_index].udp_rtp_client_addr, 0,
+                 sizeof(sessions[client_fd_index].udp_rtp_client_addr));
 
           sessions[client_fd_index].recording = 0;
           sessions[client_fd_index].play = 0;
@@ -750,8 +759,7 @@ int main(int argc, char **argv) {
             return -1;
           }
 
-          memset(&sessions[client_fd_index].udp_rtp_server_addr, 0,
-                 sizeof(sessions[client_fd_index].udp_rtp_server_addr));
+          // SERVER UDP RTP
           sessions[client_fd_index].udp_rtp_server_addr.sin_family = AF_INET;
           sessions[client_fd_index].udp_rtp_server_addr.sin_addr.s_addr =
               INADDR_ANY;
@@ -759,8 +767,7 @@ int main(int argc, char **argv) {
               htons(UDP_PORT + client_fd_index);
           sessions[client_fd_index].udp_rtp_port = UDP_PORT + client_fd_index;
 
-          memset(&sessions[client_fd_index].udp_rtcp_server_addr, 0,
-                 sizeof(sessions[client_fd_index].udp_rtcp_server_addr));
+          // SERVER UDP RTCP
           sessions[client_fd_index].udp_rtcp_server_addr.sin_family = AF_INET;
           sessions[client_fd_index].udp_rtcp_server_addr.sin_addr.s_addr =
               INADDR_ANY;
@@ -796,7 +803,8 @@ int main(int argc, char **argv) {
           session_index = client_fd_index;
         }
 
-        printf("Waiting for TCP connection to be accepted...\n\n");
+        printf("Waiting for TCP connection to be accepted... %d\n\n",
+               client_fd_index);
 
         // getting rtsp tcp data
         tcp_client_fds[client_fd_index] = accept(
@@ -810,8 +818,8 @@ int main(int argc, char **argv) {
           continue;
         }
 
-        printf("Accepted Connection on file descriptor: %d\n",
-               tcp_client_fds[client_fd_index]);
+        printf("Accepted Connection on file descriptor: %d index: %d\n",
+               tcp_client_fds[client_fd_index], client_fd_index);
 
         args[client_fd_index].tcp_client_fd = tcp_client_fds[client_fd_index];
         args[client_fd_index].play = &sessions[session_index].play;
@@ -828,14 +836,14 @@ int main(int argc, char **argv) {
         args[client_fd_index].udp_rtp_client_addr =
             &sessions[session_index].udp_rtp_client_addr;
         args[client_fd_index].udp_rtp_client_addr_size =
-            sessions[session_index].udp_rtp_client_addr_size;
+            sizeof(sessions[session_index].udp_rtp_client_addr);
 
         args[client_fd_index].udp_rtcp_client_fd =
             &sessions[session_index].udp_rtcp_client_fd;
         args[client_fd_index].udp_rtcp_client_addr =
             &sessions[session_index].udp_rtcp_client_addr;
         args[client_fd_index].udp_rtcp_client_addr_size =
-            sessions[session_index].udp_rtcp_client_addr_size;
+            sizeof(sessions[session_index].udp_rtcp_client_addr);
 
         args[client_fd_index].sdp = sessions[session_index].sdp;
         args[client_fd_index].udp_rtp_port =
