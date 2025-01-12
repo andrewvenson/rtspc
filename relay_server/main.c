@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -63,6 +64,7 @@ typedef struct {
   char *sdp;
   int udp_rtp_port;
   int udp_rtcp_port;
+  int *stream_num;
 } Handle_Request_Args;
 
 typedef struct {
@@ -236,11 +238,59 @@ int get_udp_client_ports(char *buffer, int buffer_size, int *rtp_port,
   return 0;
 }
 
-void spawn_rtsp_client() {
-  while (1) {
-    printf("Client separate process\n");
-    sleep(5);
-  }
+void spawn_rtsp_client(int stream_num) {
+  printf("Spawning Client...\n");
+
+  char *local_rtsp_address = "rtsp://127.0.0.1:8081";
+  char *args[] = {
+      "ffmpeg", // Program name
+      "-re",    // Real-time mode
+      "-loglevel",
+      "debug", // Debug logging
+      "-rtsp_transport",
+      "udp", // Use UDP for RTSP
+      "-i",
+      local_rtsp_address, // Input RTSP URL
+      "-vf",
+      "fps=30", // Video filter: 30 fps
+      "-c:v",
+      "libx264", // Video codec
+      "-preset",
+      "veryfast", // Preset for encoding
+      "-g",
+      "30", // GOP size
+      "-c:a",
+      "aac", // Audio codec
+      "-b:a",
+      "128k", // Audio bitrate
+      "-f",
+      "hls", // Format: HLS
+      "-hls_time",
+      "4", // HLS segment time
+      "-hls_segment_filename",
+      "segment_%03d.ts", // HLS segment file names
+      "output.m3u8",     // HLS output file
+      NULL               // Null-terminator for the execv arguments
+  };
+
+  chdir("../stream_server/public");
+  char rm_cmd[20];
+  char stream[2];
+  snprintf(stream, sizeof(stream), "%d", stream_num);
+
+  strcat(rm_cmd, "rm -rf");
+  strcat(rm_cmd, stream);
+  strcat(rm_cmd, "\0");
+  system(rm_cmd);
+
+  mkdir(stream, 0775);
+  chdir(stream);
+
+  // Replace the current process with the ffplay command
+  execvp("ffmpeg", args);
+
+  // If execvp fails, print an error
+  perror("execvp failed");
 }
 
 // STREAM
@@ -322,8 +372,8 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
 }
 
 // RTSP METHODS
-void record(char *buffer, int client_fd, Handle_Request_Args *args,
-            char *cseq) {
+void record(char *buffer, int client_fd, Handle_Request_Args *args, char *cseq,
+            int *stream_num) {
   printf("REQUEST:\n%s\n\n", buffer);
 
   int *play = args->play;
@@ -356,6 +406,7 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args,
   printf("RESPONSE:\n%s\n\n", record_response);
   send(client_fd, record_response, strlen(record_response), 0);
   *recording = 1;
+  *stream_num += 1;
 
   /*
   TODO: fork process
@@ -385,7 +436,7 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args,
   int pid = fork();
 
   if (pid == 0) {
-    spawn_rtsp_client();
+    spawn_rtsp_client(*stream_num);
   } else if (pid != -1) {
     stream(play, udp_rtp_server_fd, udp_rtcp_server_fd, udp_rtp_client_fd,
            udp_rtcp_client_fd, udp_rtp_client_addr, udp_rtp_client_addr_size,
@@ -610,7 +661,7 @@ void *handle_requests(void *arg) {
       } else if (strcmp(method, "ANNOUNCE") == 0) {
         announce(buffer, args->tcp_client_fd, cseq);
       } else if (strcmp(method, "RECORD") == 0) {
-        record(buffer, args->tcp_client_fd, args, cseq);
+        record(buffer, args->tcp_client_fd, args, cseq, args->stream_num);
       } else if (strcmp(method, "PLAY") == 0) {
         play(buffer, args->tcp_client_fd, args->play, cseq);
       }
@@ -644,6 +695,7 @@ int main(int argc, char **argv) {
   }
 
   int tcp_client_fds[max_clients] = {0};
+  int stream_num = 0;
   RTSP_Session sessions[max_clients];
   Handle_Request_Args args[max_clients];
   memset(args, 0, sizeof(args));
@@ -909,6 +961,7 @@ int main(int argc, char **argv) {
             sessions[session_index].udp_rtp_port;
         args[client_fd_index].udp_rtcp_port =
             sessions[session_index].udp_rtcp_port;
+        args[client_fd_index].stream_num = &stream_num;
 
         pthread_t thread;
         pthread_create(&thread, NULL, handle_requests, &args[client_fd_index]);
