@@ -17,6 +17,7 @@
 #define STREAM_BUFFER_SIZE 1500
 #define max_clients                                                            \
   12 // 2 clients signify 1 e2e (stream<->client) rtsp streaming session
+     // TODO: Make this an argument when starting the server
 
 // The following command records the live stream from initial client
 /* (macos)
@@ -25,20 +26,20 @@
  0 -fflags +genpts \
  -c:v libx264 \
  -x264-params "keyint=60:no-scenecut=1" \
- -f rtsp rtsp://127.0.0.1:8081
+ -f rtsp rtsp://public_ip:8081
 */
 
 // The following command plays live stream from  client
-/*
+/* (agnostic)
   ffplay -loglevel debug -v verbose \
   -vcodec h264 -rtsp_transport udp -i \
-  rtsp://192.168.1.29:8081
+  rtsp://127.0.0.1:8081
  */
 
 // The following command converts stream to hls
-/*
+/* (agnostic)
  ffmpeg - re - loglevel debug - rtsp_transport udp -i \
- rtsp : //192.168.1.29:8081 \
+ rtsp://127.0.0.1:8081 \
  -vf fps=30 \
  -c:v libx264 -preset veryfast -g 30 \
  -c:a aac -b:a 128k \
@@ -120,7 +121,7 @@ void get_method(char *buffer, int buffer_size, char *method) {
   }
 }
 
-// TODO need to support double/triple/etc digit numbers
+// TODO: Need to support double/triple/etc digit numbers
 void get_cseq(char *buffer, int buffer_size, char *cseq) {
   for (int x = 0; x < buffer_size; x++) {
     if (x + 6 < buffer_size) {
@@ -353,8 +354,30 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args,
          udp_rtcp_client_fd, udp_rtp_client_addr, udp_rtp_client_addr_size,
          udp_rtcp_client_addr, udp_rtcp_client_addr_size, recording, client_fd);
 
-  // TODO fork process and for the child process execute the ffmpeg rtsp client
-  // command to convert stream data to hls
+  /*
+  TODO: fork process
+  ffmpeg clients being invoked from this process should be the only clients
+  that can view the stream
+  execute the ffmpeg rtsp client command to convert stream data to hls
+  use the index of running cameras as the camera number to save hls output
+  too
+  1. mkdir -p <path_to_client_public_dir>/camera-<index>
+  2. Generate unique username and password and set data in pointer for
+  current camera.
+  - Need to implement digest auth:
+      - (https://www.rfc-editor.org/rfc/rfc7826#section-19.1.1)
+  - The server will use the username and password stored in the pointers
+  described above to determine if it should allow the client access
+ 3.
+ ffmpeg - re - loglevel debug - rtsp_transport udp -i \
+ rtsp://127.0.0.1:8081 \
+ -vf fps=30 \
+ -c:v libx264 -preset veryfast -g 30 \
+ -c:a aac -b:a 128k \
+ -f hls -hls_time 4 -hls_segment_filename "segment_%03d.ts" \
+ <path_to_client_public_dir>/camera-<index>/output.m3u8
+ 4. Set pointer that camera started streaming
+  */
 }
 
 void play(char *buffer, int client_fd, int *play, char *cseq) {
@@ -367,7 +390,7 @@ void play(char *buffer, int client_fd, int *play, char *cseq) {
   strcat(play_response, "CSeq: ");
   strcat(play_response, cseq);
   strcat(play_response, "\r\n");
-  strcat(play_response, "Range: npt=0.000-\r\n");
+  strcat(play_response, "Range: npt=0.000-\r\n"); // LIVE
   strcat(play_response, "Session: 12345678\r\n\r\n");
 
   printf("PLAY RESPONSE to client_fd %d:\n%s\n\n", client_fd, play_response);
@@ -395,6 +418,11 @@ void announce(char *buffer, int client_fd, char *cseq) {
 // udp
 void setup(char *buffer, int rtp_port, int rtcp_port, char *rtp_port_char,
            char *rtcp_port_char, Handle_Request_Args *args, char *cseq) {
+  // TODO: need to create random session and save in pointer as the session for
+  // the stream (https://www.rfc-editor.org/rfc/rfc7826#section-18.49)
+  // session identifier chosen should follow these guidelines:
+  // https://www.rfc-editor.org/rfc/rfc7826#section-4.3
+
   printf("REQUEST:\n%s\n\n", buffer);
 
   int tcp_client_fd = args->tcp_client_fd;
@@ -440,6 +468,9 @@ void setup(char *buffer, int rtp_port, int rtcp_port, char *rtp_port_char,
 }
 
 void describe(char *buffer, Handle_Request_Args *args, char *cseq) {
+  // Message Syntax: https://www.rfc-editor.org/rfc/rfc7826#section-20.2.2
+  // Header Syntax: https://www.rfc-editor.org/rfc/rfc7826#section-20.2.3
+
   printf("REQUEST:\n%s\n\n", buffer);
 
   int tcp_client_fd = args->tcp_client_fd;
@@ -574,6 +605,14 @@ void *handle_requests(void *arg) {
 
 int main(int argc, char **argv) {
   setbuf(stdout, NULL); // disable buffering to allow printing to file
+  // TODO: Digest and Basic auth should be used by both the cameras streaming
+  // the rtsp data and clients invoked from this server to view the stream and
+  // convert data to hls
+  // Clients streaming data to this server should send rtsp over tls
+  // Considering the clients viewing the stream can only be invoked from this
+  // server, basic and digest authentication should suffice for said clients
+  // The media hls stream will be over tls/https and only viewable from a
+  // specific ip defined by the (vpn's public ip address)
 
   if (argc < 2) {
     printf("Must pass relay server public IP Address\n\n");
