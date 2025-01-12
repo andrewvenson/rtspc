@@ -351,6 +351,9 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args,
   stream(play, udp_rtp_server_fd, udp_rtcp_server_fd, udp_rtp_client_fd,
          udp_rtcp_client_fd, udp_rtp_client_addr, udp_rtp_client_addr_size,
          udp_rtcp_client_addr, udp_rtcp_client_addr_size, recording, client_fd);
+
+  // TODO fork process and for the child process execute the ffmpeg rtsp client
+  // command to convert stream data to hls
 }
 
 void play(char *buffer, int client_fd, int *play, char *cseq) {
