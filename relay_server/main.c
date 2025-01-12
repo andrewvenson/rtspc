@@ -236,6 +236,13 @@ int get_udp_client_ports(char *buffer, int buffer_size, int *rtp_port,
   return 0;
 }
 
+void spawn_rtsp_client() {
+  while (1) {
+    printf("Client separate process\n");
+    sleep(5);
+  }
+}
+
 // STREAM
 void *stream_protocol(void *data) {
   struct stream_data *sd = (struct stream_data *)data;
@@ -350,10 +357,6 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args,
   send(client_fd, record_response, strlen(record_response), 0);
   *recording = 1;
 
-  stream(play, udp_rtp_server_fd, udp_rtcp_server_fd, udp_rtp_client_fd,
-         udp_rtcp_client_fd, udp_rtp_client_addr, udp_rtp_client_addr_size,
-         udp_rtcp_client_addr, udp_rtcp_client_addr_size, recording, client_fd);
-
   /*
   TODO: fork process
   ffmpeg clients being invoked from this process should be the only clients
@@ -378,6 +381,19 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args,
  <path_to_client_public_dir>/camera-<index>/output.m3u8
  4. Set pointer that camera started streaming
   */
+
+  int pid = fork();
+
+  if (pid == 0) {
+    spawn_rtsp_client();
+  } else if (pid != -1) {
+    stream(play, udp_rtp_server_fd, udp_rtcp_server_fd, udp_rtp_client_fd,
+           udp_rtcp_client_fd, udp_rtp_client_addr, udp_rtp_client_addr_size,
+           udp_rtcp_client_addr, udp_rtcp_client_addr_size, recording,
+           client_fd);
+  } else {
+    perror("Error during client fork");
+  }
 }
 
 void play(char *buffer, int client_fd, int *play, char *cseq) {
