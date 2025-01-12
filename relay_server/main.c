@@ -15,7 +15,8 @@
 #define UDP_RTCP_PORT 8083
 #define TCP_RTSP_BUFFER_SIZE 2048
 #define STREAM_BUFFER_SIZE 1500
-#define max_clients 10
+#define max_clients                                                            \
+  12 // 2 clients signify 1 e2e (stream<->client) rtsp streaming session
 
 // The following command records the live stream from initial client
 /* (macos)
