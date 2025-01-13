@@ -1,32 +1,130 @@
 <html>
 <head>
   <link href="https://vjs.zencdn.net/8.16.1/video-js.css" rel="stylesheet" />
+  <link rel="manifest" href="/public/icons/site.webmanifest" />
+  <link rel="icon" type="image/png" href="/public/icons/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/public/icons/favicon.svg" />
+  <link rel="shortcut icon" href="/public/icons/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/public/icons/apple-touch-icon.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/public/icons/apple-touch-icon-precomposed.png" />
+  <meta name="apple-mobile-web-app-title" content="vensec" />
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link href="/public/styles.css" rel="stylesheet" />
 </head>
 <body>
-  <video
-    class="video-js"
-    controls
-    preload="auto"
-    width="640"
-    height="264"
-    data-setup="{}"
-    autoplay
-    muted
-  >
-  <source src="/public/1/output.m3u8" type="application/x-mpegURL">
-  </video>
-  <video
-    class="video-js"
-    controls
-    preload="auto"
-    width="640"
-    height="264"
-    data-setup="{}"
-    autoplay
-    muted
-  >
-  <source src="/public/2/output.m3u8" type="application/x-mpegURL">
-  </video>
-  <script src="https://vjs.zencdn.net/8.16.1/video.min.js"></script>
+    <main class='stream-container'>
+      <div class='video-container' />
+        <video
+          id="video1"
+          class="video-js"
+          controls
+          preload="auto"
+          data-setup="{}"
+          muted
+          autoplay
+          muted
+          playsinline
+        >
+        <source src="/public/1/output.m3u8" type="application/x-mpegURL">
+        </video>
+      </div>
+
+      <div class='video-container' />
+        <video
+          id="video2"
+          class="video-js"
+          controls
+          preload="auto"
+          data-setup="{}"
+          muted
+          autoplay
+          muted
+          playsinline
+        >
+        <source src="/public/2/output.m3u8" type="application/x-mpegURL">
+        </video>
+      </div>
+
+      <div class='video-container' />
+        <video
+          id="video1"
+          class="video-js"
+          controls
+          preload="auto"
+          data-setup="{}"
+          muted
+          autoplay
+          muted
+          playsinline
+        >
+        <source src="/public/1/output.m3u8" type="application/x-mpegURL">
+        </video>
+      </div>
+
+      <div class='video-container' />
+        <video
+          id="video3"
+          class="video-js"
+          controls
+          preload="auto"
+          data-setup="{}"
+          muted
+          autoplay
+          muted
+          playsinline
+        >
+        <source src="/public/2/output.m3u8" type="application/x-mpegURL">
+        </video>
+      </div>
+
+      <div class='video-container' />
+        <video
+          id="video1"
+          class="video-js"
+          controls
+          preload="auto"
+          data-setup="{}"
+          muted
+          autoplay
+          muted
+          playsinline
+        >
+        <source src="/public/1/output.m3u8" type="application/x-mpegURL">
+        </video>
+      </div>
+
+      <div class='video-container' />
+        <video
+          id="video4"
+          class="video-js"
+          controls
+          preload="auto"
+          data-setup="{}"
+          muted
+          autoplay
+          muted
+          playsinline
+        >
+        <source src="/public/2/output.m3u8" type="application/x-mpegURL">
+        </video>
+      </div>
+    </main>
+
+    <script>
+    // Function to play video programmatically
+    // function playVideo(videoId) {
+    //   const video = document.getElementById(videoId);
+    //   video.play().then(() => {
+    //     console.log(`${videoId} is playing`);
+    //   }).catch(error => {
+    //     console.warn(`Autoplay failed for ${videoId}:`, error);
+    //   });
+    // }
+
+    </script>
+    <script src="https://vjs.zencdn.net/8.16.1/video.min.js"></script>
+
 </body>
 </html>

@@ -1,4 +1,8 @@
 a.out
-public
+1
+2
+3
+4
 node_modules
 package-lock.json
+*.pem
