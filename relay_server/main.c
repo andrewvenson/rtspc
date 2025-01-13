@@ -304,9 +304,6 @@ void *stream_protocol(void *data) {
       play_message_sent = 1;
     }
 
-    // printf("DATA on CLIENT_FD: %d\n\n", sd->client_fd);
-    //  printf("Sending on PORT: %d\n\n", ntohs(udp_client_addr.sin_port));
-
     bytes =
         recvfrom(udp_server_fd, buffer, STREAM_BUFFER_SIZE, 0,
                  (struct sockaddr *)&udp_sender_addr, &udp_sender_addr_size);
