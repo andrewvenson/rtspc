@@ -37,17 +37,6 @@
   rtsp://127.0.0.1:8081
  */
 
-// The following command converts stream to hls
-/* (agnostic)
- ffmpeg - re - loglevel debug - rtsp_transport udp -i \
- rtsp://127.0.0.1:8081 \
- -vf fps=30 \
- -c:v libx264 -preset veryfast -g 30 \
- -c:a aac -b:a 128k \
- -f hls -hls_time 4 -hls_segment_filename "segment_%03d.ts" \
- output.m3u8
-*/
-
 typedef struct {
   int *play;
   int *recording;
