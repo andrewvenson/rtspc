@@ -40,20 +40,21 @@
 typedef struct {
   int *play;
   int *recording;
+  int *udp_rtp_client_fd;
+  int *udp_rtcp_client_fd;
+  int *stream_num;
   int tcp_client_fd;
   int udp_rtp_server_fd;
   int udp_rtcp_server_fd;
-  int *udp_rtp_client_fd;
-  int *udp_rtcp_client_fd;
+  int udp_rtp_port;
+  int udp_rtcp_port;
   struct sockaddr_in *udp_rtp_client_addr;
-  socklen_t udp_rtp_client_addr_size;
   struct sockaddr_in *udp_rtcp_client_addr;
+  socklen_t udp_rtp_client_addr_size;
   socklen_t udp_rtcp_client_addr_size;
   char *rtsp_relay_server_ip;
   char *sdp;
-  int udp_rtp_port;
-  int udp_rtcp_port;
-  int *stream_num;
+  char *session_id;
 } Handle_Request_Args;
 
 typedef struct {
@@ -76,6 +77,7 @@ typedef struct {
   socklen_t udp_rtcp_client_addr_size;
   char rtsp_relay_server_ip;
   char sdp[300];
+  char *session_id;
 } RTSP_Session;
 
 struct stream_data {
@@ -226,6 +228,8 @@ int get_udp_client_ports(char *buffer, int buffer_size, int *rtp_port,
   }
   return 0;
 }
+
+void generate_session_id(char *sessionid) { printf("Generating sessionId"); }
 
 void spawn_rtsp_client(int stream_num) {
   printf("Spawning Client...\n");
