@@ -1,6 +1,7 @@
+<!DOCTYPE html>
 <html>
   <head>
-    <link href="https://vjs.zencdn.net/8.16.1/video-js.css" rel="stylesheet" />
+    <meta charset="UTF-8">
     <link rel="manifest" href="/public/icons/site.webmanifest" />
     <link rel="icon" type="image/png" href="/public/icons/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="/public/icons/favicon.svg" />
@@ -16,14 +17,10 @@
 
   <body>
       <main class='stream-container'>
-        <div class='video-container' />
+        <div class='video-container' id="video-container-1">
           <video
             id="video1"
-            class="video-js"
-            controls
             preload="auto"
-            data-setup="{}"
-            muted
             autoplay
             muted
             playsinline
@@ -32,14 +29,10 @@
           </video>
         </div>
 
-        <div class='video-container' />
+        <div class='video-container' id="video-container-2">
           <video
             id="video2"
-            class="video-js"
-            controls
             preload="auto"
-            data-setup="{}"
-            muted
             autoplay
             muted
             playsinline
@@ -48,46 +41,9 @@
           </video>
         </div>
 
-        <div class='video-container' />
-          <video
-            id="video1"
-            class="video-js"
-            controls
-            preload="auto"
-            data-setup="{}"
-            muted
-            autoplay
-            muted
-            playsinline
-          >
-          <source src="/public/1/output.m3u8" type="application/x-mpegURL">
-          </video>
-        </div>
-
-        <div class='video-container' />
+        <div class='video-container' id="video-container-3">
           <video
             id="video3"
-            class="video-js"
-            controls
-            preload="auto"
-            data-setup="{}"
-            muted
-            autoplay
-            muted
-            playsinline
-          >
-          <source src="/public/2/output.m3u8" type="application/x-mpegURL">
-          </video>
-        </div>
-
-        <div class='video-container' />
-          <video
-            id="video1"
-            class="video-js"
-            controls
-            preload="auto"
-            data-setup="{}"
-            muted
             autoplay
             muted
             playsinline
@@ -96,14 +52,34 @@
           </video>
         </div>
 
-        <div class='video-container' />
+        <div class='video-container' id="video-container-4">
           <video
             id="video4"
-            class="video-js"
-            controls
             preload="auto"
-            data-setup="{}"
+            autoplay
             muted
+            playsinline
+          >
+          <source src="/public/2/output.m3u8" type="application/x-mpegURL">
+          </video>
+        </div>
+
+        <div class='video-container' id="video-container-5">
+          <video
+            id="video5"
+            preload="auto"
+            autoplay
+            muted
+            playsinline
+          >
+          <source src="/public/1/output.m3u8" type="application/x-mpegURL">
+          </video>
+        </div>
+
+        <div class='video-container' id="video-container-6">
+          <video
+            id="video6"
+            preload="auto"
             autoplay
             muted
             playsinline
@@ -114,18 +90,19 @@
       </main>
 
       <script>
-      // Function to play video programmatically
-      // function playVideo(videoId) {
-      //   const video = document.getElementById(videoId);
-      //   video.play().then(() => {
-      //     console.log(`${videoId} is playing`);
-      //   }).catch(error => {
-      //     console.warn(`Autoplay failed for ${videoId}:`, error);
-      //   });
-      // }
-
+        for(let index = 1; index <= 6; index++){
+          const video = document.getElementById(`video${index}`);
+          const videoContainer = document.getElementById(`video-container-${index}`);
+          video.addEventListener('click', () => {
+              if(video.paused){
+                videoContainer.style.border = "5px solid black";
+                video.play();
+              }else{
+                videoContainer.style.border = "5px dashed #FFA500";
+                video.pause();
+              }
+          });
+        }
       </script>
-      <script src="https://vjs.zencdn.net/8.16.1/video.min.js"></script>
-
   </body>
 </html>
