@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -16,6 +17,7 @@
 #define UDP_RTCP_PORT 8083
 #define TCP_RTSP_BUFFER_SIZE 2048
 #define STREAM_BUFFER_SIZE 1500
+#define SESSION_ID_SIZE 22
 #define max_clients                                                            \
   12 // 2 clients signify 1 e2e (stream<->client) rtsp streaming session
      // TODO: Make this an argument when starting the server
@@ -75,9 +77,9 @@ typedef struct {
   socklen_t udp_rtp_client_addr_size;
   socklen_t tcp_rtsp_client_addr_size;
   socklen_t udp_rtcp_client_addr_size;
-  char rtsp_relay_server_ip;
+  char *rtsp_relay_server_ip;
   char sdp[300];
-  char *session_id;
+  char session_id[SESSION_ID_SIZE];
 } RTSP_Session;
 
 struct stream_data {
@@ -139,6 +141,7 @@ void get_sprop(char *sprop, char *buffer, int buffer_size) {
       break;
     }
   }
+  printf("Do I make it out\n");
 }
 
 int create_client_udp_fd(int port, struct sockaddr_in *udp_client_addr) {
@@ -229,7 +232,35 @@ int get_udp_client_ports(char *buffer, int buffer_size, int *rtp_port,
   return 0;
 }
 
-void generate_session_id(char *sessionid) { printf("Generating sessionId"); }
+void generate_session_id(char *session_id) {
+  printf("Generating Session Identifier\n");
+  // include fnctl.h for access to open and read functions
+  // https://en.wikipedia.org/wiki//dev/random
+
+  int fd = open("/dev/urandom", O_RDONLY);
+  if (fd < 0) {
+    perror("Error opening /dev/urandom");
+    return;
+  }
+
+  char *alphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+  char buffer[SESSION_ID_SIZE];
+
+  if (read(fd, buffer, sizeof(buffer)) < 0) {
+    perror("Error reading /dev/urandom/");
+    close(fd);
+    return;
+  }
+
+  close(fd);
+
+  for (int x = 0; x < SESSION_ID_SIZE; x++) {
+    int masked_bit = buffer[x] & 0x3f;
+    session_id[x] = alphabet[masked_bit];
+  }
+}
 
 void spawn_rtsp_client(int stream_num) {
   printf("Spawning Client...\n");
@@ -363,7 +394,7 @@ void stream(int *play, int udp_rtp_server_fd, int udp_rtcp_server_fd,
 
 // RTSP METHODS
 void record(char *buffer, int client_fd, Handle_Request_Args *args, char *cseq,
-            int *stream_num) {
+            int *stream_num, char *session_id) {
   printf("REQUEST:\n%s\n\n", buffer);
 
   int *play = args->play;
@@ -388,7 +419,9 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args, char *cseq,
   strcat(record_response, "CSeq: ");
   strcat(record_response, cseq);
   strcat(record_response, "\r\n");
-  strcat(record_response, "Session: 12345678\r\n");
+  strcat(record_response, "Session:");
+  strcat(record_response, session_id);
+  strcat(record_response, "\r\n");
   get_date(time_buffer, sizeof(time_buffer));
   strcat(record_response, time_buffer);
   strcat(record_response, "\r\n\r\n");
@@ -437,7 +470,8 @@ void record(char *buffer, int client_fd, Handle_Request_Args *args, char *cseq,
   }
 }
 
-void play(char *buffer, int client_fd, int *play, char *cseq) {
+void play(char *buffer, int client_fd, int *play, char *cseq,
+          char *session_id) {
   printf("PLAY REQUEST:\n%s\n\n", buffer);
 
   char play_response[300];
@@ -448,7 +482,9 @@ void play(char *buffer, int client_fd, int *play, char *cseq) {
   strcat(play_response, cseq);
   strcat(play_response, "\r\n");
   strcat(play_response, "Range: npt=0.000-\r\n"); // LIVE
-  strcat(play_response, "Session: 12345678\r\n\r\n");
+  strcat(play_response, "Session:");
+  strcat(play_response, session_id);
+  strcat(play_response, "\r\n\r\n");
 
   printf("PLAY RESPONSE to client_fd %d:\n%s\n\n", client_fd, play_response);
   send(client_fd, play_response, strlen(play_response), 0);
@@ -456,7 +492,7 @@ void play(char *buffer, int client_fd, int *play, char *cseq) {
   *play = 1;
 }
 
-void announce(char *buffer, int client_fd, char *cseq) {
+void announce(char *buffer, int client_fd, char *cseq, char *session_id) {
   printf("REQUEST:\n%s\n\n", buffer);
 
   char announce_response[100];
@@ -465,8 +501,7 @@ void announce(char *buffer, int client_fd, char *cseq) {
   strcat(announce_response, "RTSP/1.0 200 OK\r\n");
   strcat(announce_response, "CSeq: ");
   strcat(announce_response, cseq);
-  strcat(announce_response, "\r\n");
-  strcat(announce_response, "Session: 12345678\r\n\r\n");
+  strcat(announce_response, "\r\n\r\n");
 
   printf("RESPONSE:\n%s\n\n", announce_response);
   send(client_fd, announce_response, strlen(announce_response), 0);
@@ -481,6 +516,8 @@ void setup(char *buffer, int rtp_port, int rtcp_port, char *rtp_port_char,
   // https://www.rfc-editor.org/rfc/rfc7826#section-4.3
 
   printf("REQUEST:\n%s\n\n", buffer);
+
+  generate_session_id(args->session_id);
 
   int tcp_client_fd = args->tcp_client_fd;
   int *recording = args->recording;
@@ -512,7 +549,9 @@ void setup(char *buffer, int rtp_port, int rtcp_port, char *rtp_port_char,
   strcat(setup_response, "-");
   strcat(setup_response, udp_rtcp_port);
   strcat(setup_response, "\r\n");
-  strcat(setup_response, "Session: 12345678\r\n\r\n");
+  strcat(setup_response, "Session:");
+  strcat(setup_response, args->session_id);
+  strcat(setup_response, "\r\n\r\n");
 
   if (*recording == 1) {
     *udp_rtp_client_fd = create_client_udp_fd(rtp_port, udp_rtp_client_addr);
@@ -649,11 +688,12 @@ void *handle_requests(void *arg) {
         setup(buffer, rtp_port, rtcp_port, rtp_port_char, rtcp_port_char, args,
               cseq);
       } else if (strcmp(method, "ANNOUNCE") == 0) {
-        announce(buffer, args->tcp_client_fd, cseq);
+        announce(buffer, args->tcp_client_fd, cseq, args->session_id);
       } else if (strcmp(method, "RECORD") == 0) {
-        record(buffer, args->tcp_client_fd, args, cseq, args->stream_num);
+        record(buffer, args->tcp_client_fd, args, cseq, args->stream_num,
+               args->session_id);
       } else if (strcmp(method, "PLAY") == 0) {
-        play(buffer, args->tcp_client_fd, args->play, cseq);
+        play(buffer, args->tcp_client_fd, args->play, cseq, args->session_id);
       }
     }
     memset(buffer, 0, sizeof(buffer));
@@ -947,6 +987,7 @@ int main(int argc, char **argv) {
             sizeof(sessions[session_index].udp_rtcp_client_addr);
 
         args[client_fd_index].sdp = sessions[session_index].sdp;
+        args[client_fd_index].session_id = sessions[session_index].session_id;
         args[client_fd_index].udp_rtp_port =
             sessions[session_index].udp_rtp_port;
         args[client_fd_index].udp_rtcp_port =
