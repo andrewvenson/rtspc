@@ -1,108 +1,75 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="UTF-8">
-    <link rel="manifest" href="/public/icons/site.webmanifest" />
-    <link rel="icon" type="image/png" href="/public/icons/favicon-96x96.png" sizes="96x96" />
-    <link rel="icon" type="image/svg+xml" href="/public/icons/favicon.svg" />
-    <link rel="shortcut icon" href="/public/icons/favicon.ico" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/public/icons/apple-touch-icon.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/public/icons/apple-touch-icon-precomposed.png" />
-    <meta name="apple-mobile-web-app-title" content="vensec" />
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link href="/public/styles.css" rel="stylesheet" />
-  </head>
 
-  <body>
-      <main class='stream-container'>
-        <div class='video-container' id="video-container-1">
-          <video
-            id="video1"
-            preload="auto"
-            autoplay
-            muted
-            playsinline
-          >
-          <source src="/public/1/output.m3u8" type="application/x-mpegURL">
-          </video>
-        </div>
+<head>
+  <meta charset="UTF-8">
+  <link rel="manifest" href="/public/icons/site.webmanifest" />
+  <link rel="icon" type="image/png" href="/public/icons/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/public/icons/favicon.svg" />
+  <link rel="shortcut icon" href="/public/icons/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/public/icons/apple-touch-icon.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/public/icons/apple-touch-icon-precomposed.png" />
+  <meta name="apple-mobile-web-app-title" content="vensec" />
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link href="/public/styles.css" rel="stylesheet" />
+</head>
 
-        <div class='video-container' id="video-container-2">
-          <video
-            id="video2"
-            preload="auto"
-            autoplay
-            muted
-            playsinline
-          >
-          <source src="/public/2/output.m3u8" type="application/x-mpegURL">
-          </video>
-        </div>
+<body>
+  <main class='stream-container'>
+    <div class='video-container' id="video-container-1">
+      <video id="video1" preload="auto" autoplay muted playsinline>
+        <source src="/public/1/output.m3u8" type="application/x-mpegURL">
+      </video>
+    </div>
 
-        <div class='video-container' id="video-container-3">
-          <video
-            id="video3"
-            autoplay
-            muted
-            playsinline
-          >
-          <source src="/public/1/output.m3u8" type="application/x-mpegURL">
-          </video>
-        </div>
+    <div class='video-container' id="video-container-2">
+      <video id="video2" preload="auto" autoplay muted playsinline>
+        <source src="/public/2/output.m3u8" type="application/x-mpegURL">
+      </video>
+    </div>
 
-        <div class='video-container' id="video-container-4">
-          <video
-            id="video4"
-            preload="auto"
-            autoplay
-            muted
-            playsinline
-          >
-          <source src="/public/2/output.m3u8" type="application/x-mpegURL">
-          </video>
-        </div>
+    <div class='video-container' id="video-container-3">
+      <video id="video3" autoplay muted playsinline>
+        <source src="/public/1/output.m3u8" type="application/x-mpegURL">
+      </video>
+    </div>
 
-        <div class='video-container' id="video-container-5">
-          <video
-            id="video5"
-            preload="auto"
-            autoplay
-            muted
-            playsinline
-          >
-          <source src="/public/1/output.m3u8" type="application/x-mpegURL">
-          </video>
-        </div>
+    <div class='video-container' id="video-container-4">
+      <video id="video4" preload="auto" autoplay muted playsinline>
+        <source src="/public/2/output.m3u8" type="application/x-mpegURL">
+      </video>
+    </div>
 
-        <div class='video-container' id="video-container-6">
-          <video
-            id="video6"
-            preload="auto"
-            autoplay
-            muted
-            playsinline
-          >
-          <source src="/public/2/output.m3u8" type="application/x-mpegURL">
-          </video>
-        </div>
-      </main>
+    <div class='video-container' id="video-container-5">
+      <video id="video5" preload="auto" autoplay muted playsinline>
+        <source src="/public/1/output.m3u8" type="application/x-mpegURL">
+      </video>
+    </div>
 
-      <script>
-        for(let index = 1; index <= 6; index++){
-          const video = document.getElementById(`video${index}`);
-          const videoContainer = document.getElementById(`video-container-${index}`);
-          video.addEventListener('click', () => {
-              if(video.paused){
-                videoContainer.style.border = "5px solid black";
-                video.play();
-              }else{
-                videoContainer.style.border = "5px dashed #FFA500";
-                video.pause();
-              }
-          });
+    <div class='video-container' id="video-container-6">
+      <video id="video6" preload="auto" autoplay muted playsinline>
+        <source src="/public/2/output.m3u8" type="application/x-mpegURL">
+      </video>
+    </div>
+  </main>
+
+  <script>
+    for (let index = 1; index <= 6; index++) {
+      const video = document.getElementById(`video${index}`);
+      const videoContainer = document.getElementById(`video-container-${index}`);
+      video.addEventListener('click', () => {
+        if (video.paused) {
+          videoContainer.style.border = "5px solid black";
+          video.play();
+        } else {
+          videoContainer.style.border = "5px dashed #FFA500";
+          video.pause();
         }
-      </script>
-  </body>
+      });
+    }
+  </script>
+</body>
+
 </html>
