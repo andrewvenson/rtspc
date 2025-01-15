@@ -510,11 +510,6 @@ void announce(char *buffer, int client_fd, char *cseq, char *session_id) {
 // udp
 void setup(char *buffer, int rtp_port, int rtcp_port, char *rtp_port_char,
            char *rtcp_port_char, Handle_Request_Args *args, char *cseq) {
-  // TODO: need to create random session and save in pointer as the session for
-  // the stream (https://www.rfc-editor.org/rfc/rfc7826#section-18.49)
-  // session identifier chosen should follow these guidelines:
-  // https://www.rfc-editor.org/rfc/rfc7826#section-4.3
-
   printf("REQUEST:\n%s\n\n", buffer);
 
   generate_session_id(args->session_id);
