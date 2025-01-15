@@ -28,5 +28,5 @@ const options = {
 };
 
 https.createServer(options, app).listen(HTTPS_PORT, () => {
-	console.log(`Server running at https://localhost/${HTTPS_PORT}`);
+	console.log(`Server running at https://localhost:${HTTPS_PORT}`);
 });
